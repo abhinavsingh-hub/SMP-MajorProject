@@ -1,0 +1,21 @@
+{
+  "name": "@smp/core",
+  "version": "0.1.0",
+  "description": "SocialParse core types, schemas and utilities",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
+    "lint": "eslint src tests"
+  },
+  "dependencies": {
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5"
+  }
+}

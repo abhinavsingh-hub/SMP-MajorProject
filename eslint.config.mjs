@@ -21,6 +21,13 @@ export default defineConfig([
     languageOptions: {
       globals: { ...globals.node },
     },
+    rules: {
+      // Allow variables prefixed with _ to be unused (standard omit-pattern in tests).
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
   },
   prettierConfig,
 ]);

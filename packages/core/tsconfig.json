@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@smp/core": ["./src/index.ts"]
+    }
+  },
+  "include": ["src", "tests"]
+}
