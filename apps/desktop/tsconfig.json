@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@smp/core": ["../../packages/core/src/index.ts"]
+    }
+  },
+  "include": ["src", "tests", "index.js", "metro.config.js"]
+}

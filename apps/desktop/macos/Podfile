@@ -1,0 +1,25 @@
+require 'pathname'
+
+def find_react_native_macos
+  candidates = [
+    File.join(__dir__, '../node_modules/react-native-macos'),
+    File.join(__dir__, '../../node_modules/react-native-macos')
+  ]
+  candidates.find { |dir| File.directory?(dir) } || candidates[0]
+end
+
+rn_macos_path = find_react_native_macos
+pod_script = File.join(rn_macos_path, 'scripts/react_native_pods')
+require_relative pod_script if File.exist?(pod_script)
+
+platform :osx, '11.0'
+install! 'cocoapods', :deterministic_uuids => false
+
+target 'DesktopApp' do
+  if defined?(use_react_native!)
+    use_react_native!(
+      :path => rn_macos_path,
+      :app_path => '..'
+    )
+  end
+end
