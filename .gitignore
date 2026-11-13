@@ -48,6 +48,9 @@ local.properties
 .externalNativeBuild/
 captures/
 *.keystore
+gradle.properties
+!apps/mobile/android/gradle.properties
+*.signing.properties
 !debug.keystore
 
 # Editors

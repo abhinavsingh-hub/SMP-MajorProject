@@ -36,7 +36,11 @@ class ScreenCaptureModule(private val reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun getFilesDir(promise: Promise) {
-    promise.resolve(reactContext.filesDir.absolutePath)
+    try {
+      promise.resolve(reactContext.filesDir.absolutePath)
+    } catch (e: Exception) {
+      promise.reject("FILES_DIR_ERROR", "Failed to read app files directory: ${e.message}", e)
+    }
   }
 
   @ReactMethod
@@ -47,13 +51,12 @@ class ScreenCaptureModule(private val reactContext: ReactApplicationContext) :
       return
     }
 
-    if (ScreenCaptureService.mediaProjection != null) {
-      promise.resolve(true)
-      return
-    }
-
-    permissionPromise = promise
     try {
+      if (ScreenCaptureService.mediaProjection != null) {
+        promise.resolve(true)
+        return
+      }
+      permissionPromise = promise
       val mpManager = activity.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
       activity.startActivityForResult(mpManager.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
     } catch (e: Exception) {
@@ -64,21 +67,29 @@ class ScreenCaptureModule(private val reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun captureScreenshot(outputPath: String, promise: Promise) {
-    val mediaProjection = ScreenCaptureService.mediaProjection
-    if (mediaProjection == null) {
-      promise.reject("NOT_INITIALIZED", "MediaProjection is not initialized. Call requestPermission first.")
-      return
-    }
+    try {
+      val mediaProjection = ScreenCaptureService.mediaProjection
+      if (mediaProjection == null) {
+        promise.reject("PERMISSION_EXPIRED", "Permission expired, tap to re-grant screen capture permission.")
+        return
+      }
 
     val metrics = reactContext.resources.displayMetrics
     val width = metrics.widthPixels
     val height = metrics.heightPixels
     val density = metrics.densityDpi
 
-    val targetPath = if (outputPath.isBlank()) {
+    val requestedPath = if (outputPath.isBlank()) {
       File(reactContext.filesDir, "screenshot_${System.currentTimeMillis()}.png").absolutePath
     } else {
       outputPath
+    }
+    val requestedFile = File(requestedPath)
+    var destination = requestedFile
+    var collision = 1
+    while (destination.exists()) {
+      destination = File(requestedFile.parentFile, "${requestedFile.nameWithoutExtension}_$collision.png")
+      collision++
     }
 
     val handlerThread = HandlerThread("ScreenCaptureThread")
@@ -144,7 +155,6 @@ class ScreenCaptureModule(private val reactContext: ReactApplicationContext) :
           bitmap
         }
 
-        val destination = File(targetPath)
         destination.parentFile?.mkdirs()
         FileOutputStream(destination).use { out ->
           finalBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
@@ -162,6 +172,9 @@ class ScreenCaptureModule(private val reactContext: ReactApplicationContext) :
         promise.reject("SAVE_ERROR", "Failed to process screenshot: ${e.message}", e)
       }
     }, handler)
+    } catch (e: Exception) {
+      promise.reject("CAPTURE_ERROR", "Failed to capture screenshot: ${e.message}", e)
+    }
   }
 
   @ReactMethod
@@ -209,8 +222,14 @@ class ScreenCaptureModule(private val reactContext: ReactApplicationContext) :
   override fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
     if (requestCode == REQUEST_MEDIA_PROJECTION) {
       if (resultCode == Activity.RESULT_OK && data != null) {
-        ScreenCaptureService.start(reactContext, resultCode, data) {
-          permissionPromise?.resolve(true)
+        try {
+          ScreenCaptureService.start(reactContext, resultCode, data) { error ->
+            if (error == null) permissionPromise?.resolve(true)
+            else permissionPromise?.reject("PERMISSION_EXPIRED", error)
+            permissionPromise = null
+          }
+        } catch (e: Exception) {
+          permissionPromise?.reject("SERVICE_START_ERROR", "Failed to start screen capture service: ${e.message}", e)
           permissionPromise = null
         }
       } else {

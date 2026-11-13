@@ -28,10 +28,11 @@ import { exportCase, type ExportCaseResult } from '../export/exportCase';
 import { shareCase } from '../export/shareCase';
 import { generateReport, type GenerateReportResult } from '../report/generateReport';
 import Share from 'react-native-share';
+import type { CaptureRunState } from '../evidence/runState';
+import type { ScriptOptions } from '../scripts';
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation }) => {
-  const { platform, caseNumber, examinerName, accusedName, caseDir } = route.params;
-  const isAccessibilityEnabled = useAccessibilityStatus();
+  const { platform, caseNumber, examinerName, accusedName, caseDir, resumeState } = route.params;
   const evidenceService = useMemo(() => new EvidenceService(caseDir, platform), [caseDir, platform]);
   const isSupported = isPlatformSupported(platform);
   const [errorMessage, setErrorMessage] = useState('');
@@ -43,7 +44,15 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportResult, setReportResult] = useState<GenerateReportResult | null>(null);
   const [reportError, setReportError] = useState('');
+  const [permissionExpired, setPermissionExpired] = useState(false);
+  const handleAccessibilityError = useCallback((error: Error) => {
+    setErrorMessage(error.message);
+    void evidenceService.recordStepFailed('accessibility_status', error.message);
+  }, [evidenceService]);
+  const isAccessibilityEnabled = useAccessibilityStatus(handleAccessibilityError);
   const allowLeaveRef = useRef(false);
+  const scriptOptions = useMemo<ScriptOptions>(() => resumeState?.scriptOptions ?? { maxChats: 3, maxPosts: 3, scrollsPerSection: 2 }, [resumeState]);
+  const lastCompletedIndexRef = useRef(resumeState?.index ?? -1);
 
   const runner = useMemo(
     () => new ScriptRunner({
@@ -52,8 +61,17 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
       onCapture: (path, section, source, capturedAt) =>
         evidenceService.onCapture(path, section, source, capturedAt).then(() => undefined),
       onCaptureBlocked: (path, section) => evidenceService.recordCaptureBlocked(section, path),
+      onCaptureProgress: (index, captureCounter) => evidenceService.writeRunState({
+        platform, scriptOptions, index, captureCounter, status: 'running',
+      }).then(() => { lastCompletedIndexRef.current = index; }),
+      onNativeError: async (operation, message) => {
+        const readable = `${operation}: ${message}`;
+        setErrorMessage(readable);
+        if (/permission expired|not initialized/i.test(message)) setPermissionExpired(true);
+        await evidenceService.recordStepFailed(`native_${operation}`, message);
+      },
     }),
-    [caseDir, platform, evidenceService],
+    [caseDir, platform, evidenceService, scriptOptions],
   );
   const view = useScriptRunner(runner);
   const active = view.status === 'running' || view.status === 'paused';
@@ -79,6 +97,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
       runner.on('done', () => { void evidenceService.recordDone(); }),
       runner.on('stepFailed', (step, _index, error) => {
         void evidenceService.recordStepFailed(step.label ?? step.kind, error.message);
+        if (/permission expired|not initialized/i.test(error.message)) setPermissionExpired(true);
       }),
       runner.on('error', (error) => {
         setErrorMessage(error.message);
@@ -119,15 +138,37 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
   }, [active, confirmLeave, navigation]);
 
   const handleStart = async () => {
+    let runStarted = false;
     try {
       if (!isSupported) throw new Error(`Automated script is not configured for ${platform}`);
       if (!isAccessibilityEnabled) return;
       setErrorMessage('');
       const permissionGranted = await ScreenCapture.requestPermission();
       if (!permissionGranted) return;
-      await runner.run(getScriptForPlatform(platform, { maxChats: 3, maxPosts: 3, scrollsPerSection: 2 }));
+      setPermissionExpired(false);
+      if (resumeState) {
+        await evidenceService.recordRunResumed(resumeState.index + 1);
+      } else {
+        lastCompletedIndexRef.current = -1;
+        await evidenceService.writeRunState({ platform, scriptOptions, index: -1, captureCounter: 1, status: 'running' });
+      }
+      runStarted = true;
+      const steps = getScriptForPlatform(platform, scriptOptions);
+      const completed = await runner.run(steps, resumeState
+        ? { startIndex: resumeState.index + 1, captureCounter: resumeState.captureCounter }
+        : undefined);
+      await evidenceService.writeRunState({
+        platform, scriptOptions, index: completed ? steps.length - 1 : lastCompletedIndexRef.current,
+        captureCounter: runner.getCaptureCounter(), status: completed ? 'done' : 'stopped',
+      });
     } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setErrorMessage(message);
+      await evidenceService.recordStepFailed('capture_start', message);
+      if (runStarted) {
+        await evidenceService.writeRunState({ platform, scriptOptions, index: lastCompletedIndexRef.current, captureCounter: runner.getCaptureCounter(), status: 'stopped' });
+      }
+      if (/permission expired|not initialized/i.test(message)) setPermissionExpired(true);
     }
   };
 
@@ -237,6 +278,16 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
           </View>
         ) : null}
 
+        {permissionExpired ? (
+          <View style={styles.accessibilityBanner}>
+            <View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Permission expired, tap to re-grant</Text><Text style={styles.bannerText}>Android cleared the screen capture token. Re-grant it to continue.</Text></View>
+            <Pressable style={styles.enableButton} onPress={async () => {
+              try { await ScreenCapture.requestPermission(); setPermissionExpired(false); setErrorMessage(''); }
+              catch (error: unknown) { const message = error instanceof Error ? error.message : String(error); setErrorMessage(message); await evidenceService.recordStepFailed('capture_permission', message); }
+            }}><Text style={styles.enableText}>Re-grant</Text></Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Run progress</Text>
           <ProgressBar index={view.progress.index} total={view.progress.total} label={view.currentLabel} />
@@ -326,7 +377,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
               onPress={handleStart}
               disabled={!isAccessibilityEnabled || !isSupported}
             >
-              <Text style={styles.primaryButtonText}>{isSupported ? 'Start capture' : 'Platform unsupported'}</Text>
+              <Text style={styles.primaryButtonText}>{isSupported ? (resumeState ? 'Resume capture' : 'Start capture') : 'Platform unsupported'}</Text>
             </Pressable>
           ) : null}
           {view.status === 'running' || view.status === 'paused' ? (

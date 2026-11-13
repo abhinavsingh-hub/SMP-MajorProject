@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,9 +13,16 @@ import {
 } from 'react-native';
 import type { CaseInfoScreenProps } from '../navigation/types';
 import { EvidenceService } from '../evidence/EvidenceService';
+import { findResumableCases, type ResumableCase } from '../evidence/runState';
 
 export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigation }) => {
   const { platform } = route.params;
+  const [resumableCases, setResumableCases] = useState<ResumableCase[]>([]);
+  const refreshResumable = useCallback(() => { void findResumableCases(platform).then(setResumableCases); }, [platform]);
+  useEffect(() => {
+    refreshResumable();
+    return navigation.addListener('focus', refreshResumable);
+  }, [navigation, refreshResumable]);
 
   const [caseNumber, setCaseNumber] = useState('');
   const [examinerName, setExaminerName] = useState('');
@@ -80,6 +87,20 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {resumableCases.length ? (
+            <View style={styles.resumeGroup}>
+              <Text style={styles.resumeHeading}>Resume previous capture</Text>
+              {resumableCases.map((item) => (
+                <Pressable key={item.caseDir} style={styles.resumeCard} onPress={() => navigation.navigate('Capture', {
+                  platform: item.runState.platform, caseNumber: item.caseNumber, examinerName: item.examinerName,
+                  accusedName: item.accusedName, caseDir: item.caseDir, resumeState: item.runState,
+                })}>
+                  <Text style={styles.resumeTitle}>{item.caseNumber} · Last step {item.runState.index >= 0 ? item.runState.index + 1 : 'none yet'}</Text>
+                  <Text style={styles.resumeSubtitle}>Resume this saved capture</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <View style={styles.badgeContainer}>
             <Text style={styles.targetLabel}>Target Platform</Text>
             <Text style={styles.targetBadge}>{platform}</Text>
@@ -160,6 +181,11 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
 };
 
 const styles = StyleSheet.create({
+  resumeGroup: { gap: 8, marginBottom: 4 },
+  resumeHeading: { color: '#fbbf24', fontSize: 14, fontWeight: '800' },
+  resumeCard: { backgroundColor: '#422006', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#92400e', gap: 4 },
+  resumeTitle: { color: '#fde68a', fontSize: 14, fontWeight: '700' },
+  resumeSubtitle: { color: '#fcd34d', fontSize: 12 },
   container: {
     flex: 1,
     backgroundColor: '#090d16',

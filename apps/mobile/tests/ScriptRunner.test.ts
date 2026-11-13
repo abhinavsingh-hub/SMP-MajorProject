@@ -203,4 +203,23 @@ describe('ScriptRunner', () => {
       ]),
     );
   });
+
+  test('resume skips completed steps and continues the screenshot sequence', async () => {
+    (Accessibility.launchApp as jest.Mock).mockResolvedValue(true);
+    (ScreenCapture.captureScreenshot as jest.Mock).mockImplementation(async (path: string) => path);
+    (ScreenCapture.isBlankImage as jest.Mock).mockResolvedValue(false);
+    const onCaptureProgress = jest.fn();
+    const runner = new ScriptRunner({ caseDir: '/tmp/case', platform: 'telegram', onCaptureProgress });
+    const steps: Step[] = [
+      { kind: 'launchApp', packageName: 'org.telegram.messenger' },
+      { kind: 'capture', section: 'messages' },
+      { kind: 'back' },
+    ];
+
+    expect(await runner.run(steps, { startIndex: 1, captureCounter: 14 })).toBe(true);
+    expect(Accessibility.launchApp).not.toHaveBeenCalled();
+    expect(ScreenCapture.captureScreenshot).toHaveBeenCalledWith(expect.stringContaining('_0014_'));
+    expect(onCaptureProgress).toHaveBeenCalledWith(1, 15);
+    expect(runner.getCaptureCounter()).toBe(15);
+  });
 });

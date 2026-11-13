@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import type { HomeScreenProps } from '../navigation/types';
+import { findResumableCases, type ResumableCase } from '../evidence/runState';
 
 interface PlatformItem {
   id: string;
@@ -24,6 +25,8 @@ const PLATFORMS: PlatformItem[] = [
 ];
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
+  const [resumableCases, setResumableCases] = useState<ResumableCase[]>([]);
+  useEffect(() => { void findResumableCases().then(setResumableCases); }, []);
   const handleSelectPlatform = (platform: string) => {
     navigation.navigate('CaseInfo', { platform });
   };
@@ -41,6 +44,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     </Pressable>
   );
 
+  const renderResumeCard = () => resumableCases.length ? (
+    <View style={styles.resumeGroup}>
+      <Text style={styles.resumeHeading}>Resume previous capture</Text>
+      {resumableCases.map((item) => (
+        <Pressable key={item.caseDir} style={styles.resumeCard} onPress={() => navigation.navigate('Capture', {
+          platform: item.runState.platform, caseNumber: item.caseNumber, examinerName: item.examinerName,
+          accusedName: item.accusedName, caseDir: item.caseDir, resumeState: item.runState,
+        })}>
+          <Text style={styles.resumeTitle}>{item.runState.platform} · {item.caseNumber}</Text>
+          <Text style={styles.resumeSubtitle}>Last completed step {item.runState.index >= 0 ? item.runState.index + 1 : 'none yet'} · Tap to continue</Text>
+        </Pressable>
+      ))}
+    </View>
+  ) : null;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -54,6 +72,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
+        ListHeaderComponent={renderResumeCard}
       />
     </SafeAreaView>
   );
@@ -84,6 +103,11 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  resumeGroup: { gap: 8, marginBottom: 4 },
+  resumeHeading: { color: '#fbbf24', fontSize: 14, fontWeight: '800' },
+  resumeCard: { backgroundColor: '#422006', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#92400e', gap: 4 },
+  resumeTitle: { color: '#fde68a', fontSize: 14, fontWeight: '700' },
+  resumeSubtitle: { color: '#fcd34d', fontSize: 12 },
   card: {
     backgroundColor: '#0f172a',
     borderRadius: 12,

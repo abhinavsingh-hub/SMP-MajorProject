@@ -31,13 +31,13 @@ class ScreenCaptureService : Service() {
     var isRunning = false
       private set
 
-    private var onReadyListener: (() -> Unit)? = null
+    private var onReadyListener: ((String?) -> Unit)? = null
 
     fun start(
         context: Context,
         resultCode: Int,
         resultData: Intent,
-        onReady: (() -> Unit)? = null
+        onReady: ((String?) -> Unit)? = null
     ) {
       onReadyListener = onReady
       val intent = Intent(context, ScreenCaptureService::class.java).apply {
@@ -68,6 +68,7 @@ class ScreenCaptureService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    try {
     when (intent?.action) {
       ACTION_START -> {
         startForegroundWithNotification()
@@ -82,7 +83,22 @@ class ScreenCaptureService : Service() {
 
         if (resultCode != 0 && resultData != null) {
           val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-          val mp = mpManager.getMediaProjection(resultCode, resultData)
+          val mp = try {
+            mpManager.getMediaProjection(resultCode, resultData)
+          } catch (e: Exception) {
+            onReadyListener?.invoke("Permission expired, tap to re-grant screen capture permission: ${e.message}")
+            onReadyListener = null
+            stopForegroundCompat()
+            stopSelf(startId)
+            return START_NOT_STICKY
+          }
+          if (mp == null) {
+            onReadyListener?.invoke("Permission expired, tap to re-grant screen capture permission.")
+            onReadyListener = null
+            stopForegroundCompat()
+            stopSelf(startId)
+            return START_NOT_STICKY
+          }
           mp?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
               mediaProjection = null
@@ -91,7 +107,7 @@ class ScreenCaptureService : Service() {
           }, Handler(Looper.getMainLooper()))
           mediaProjection = mp
           isRunning = true
-          onReadyListener?.invoke()
+          onReadyListener?.invoke(null)
           onReadyListener = null
         }
       }
@@ -108,11 +124,20 @@ class ScreenCaptureService : Service() {
         stopSelf()
       }
     }
+    } catch (e: Exception) {
+      mediaProjection?.let { projection -> try { projection.stop() } catch (_: Exception) { } }
+      mediaProjection = null
+      isRunning = false
+      onReadyListener?.invoke("Permission expired, tap to re-grant screen capture permission: ${e.message}")
+      onReadyListener = null
+      stopForegroundCompat()
+      stopSelf(startId)
+    }
     return START_NOT_STICKY
   }
 
   override fun onDestroy() {
-    mediaProjection?.stop()
+    try { mediaProjection?.stop() } catch (_: Exception) { }
     mediaProjection = null
     isRunning = false
     super.onDestroy()
@@ -128,6 +153,14 @@ class ScreenCaptureService : Service() {
       )
     } else {
       startForeground(NOTIFICATION_ID, notification)
+    }
+  }
+
+  private fun stopForegroundCompat() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE)
+    else {
+      @Suppress("DEPRECATION")
+      stopForeground(true)
     }
   }
 
