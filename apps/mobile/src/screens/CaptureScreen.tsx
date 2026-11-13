@@ -10,10 +10,12 @@ import {
 } from 'react-native';
 import type { CaptureScreenProps } from '../navigation/types';
 import { ScreenCapture } from '../native/ScreenCapture';
+import { Accessibility, useAccessibilityStatus } from '../native/Accessibility';
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
   const { platform, caseNumber, examinerName, accusedName } = route.params;
 
+  const isAccessibilityEnabled = useAccessibilityStatus();
   const [isCapturing, setIsCapturing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [savedFilePath, setSavedFilePath] = useState('');
@@ -43,6 +45,15 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
     }
   };
 
+  const handleOpenSettings = async () => {
+    try {
+      await Accessibility.openSettings();
+    } catch (err: unknown) {
+      const errStr = err instanceof Error ? err.message : String(err);
+      setErrorMessage(errStr);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -55,6 +66,41 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
           <Text style={styles.subtitle}>
             Active case context initialized for evidentiary preservation.
           </Text>
+
+          {/* Accessibility Service Status */}
+          <View style={styles.accessibilityCard}>
+            <View style={styles.accessibilityInfo}>
+              <Text style={styles.accessibilityLabel}>Accessibility:</Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  isAccessibilityEnabled ? styles.statusBadgeEnabled : styles.statusBadgeDisabled,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusBadgeText,
+                    isAccessibilityEnabled
+                      ? styles.statusBadgeTextEnabled
+                      : styles.statusBadgeTextDisabled,
+                  ]}
+                >
+                  {isAccessibilityEnabled ? 'enabled' : 'disabled'}
+                </Text>
+              </View>
+            </View>
+            {!isAccessibilityEnabled ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.enableButton,
+                  pressed && styles.enableButtonPressed,
+                ]}
+                onPress={handleOpenSettings}
+              >
+                <Text style={styles.enableButtonText}>Enable</Text>
+              </Pressable>
+            ) : null}
+          </View>
 
           <View style={styles.detailsTable}>
             <View style={styles.detailRow}>
@@ -158,6 +204,69 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 20,
   },
+  accessibilityCard: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1e293b70',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  accessibilityInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  accessibilityLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#e2e8f0',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusBadgeEnabled: {
+    backgroundColor: '#05966925',
+    borderColor: '#10b981',
+    borderWidth: 1,
+  },
+  statusBadgeDisabled: {
+    backgroundColor: '#dc262625',
+    borderColor: '#f87171',
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  statusBadgeTextEnabled: {
+    color: '#34d399',
+  },
+  statusBadgeTextDisabled: {
+    color: '#f87171',
+  },
+  enableButton: {
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  enableButtonPressed: {
+    backgroundColor: '#0369a1',
+  },
+  enableButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   detailsTable: {
     width: '100%',
     backgroundColor: '#1e293b50',
@@ -183,7 +292,7 @@ const styles = StyleSheet.create({
   },
   actionSection: {
     width: '100%',
-    marginTop: 24,
+    marginTop: 20,
     gap: 12,
   },
   captureButton: {

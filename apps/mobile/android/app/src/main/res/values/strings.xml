@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">SocialParse</string>
+    <string name="accessibility_service_label">SocialParse Forensic Capture</string>
+    <string name="accessibility_service_description">Used exclusively by authorised law enforcement and cyber forensic examiners to inspect interactive social media UI elements and capture forensic evidence without tampering.</string>
 </resources>
