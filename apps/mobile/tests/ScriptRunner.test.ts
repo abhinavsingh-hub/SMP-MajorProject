@@ -20,6 +20,7 @@ jest.mock('../src/native/Accessibility', () => ({
 jest.mock('../src/native/ScreenCapture', () => ({
   ScreenCapture: {
     captureScreenshot: jest.fn(),
+    isBlankImage: jest.fn(),
   },
 }));
 
@@ -173,5 +174,33 @@ describe('ScriptRunner', () => {
 
     const logs = runner.getLog();
     expect(logs.some((l) => l.event === 'stopped')).toBe(true);
+  });
+
+  test('emits blocked capture and records a WARNING while keeping the evidence file', async () => {
+    const path = '/tmp/case/whatsapp/screenshots/0001_chat.png';
+    (ScreenCapture.captureScreenshot as jest.Mock).mockResolvedValue(path);
+    (ScreenCapture.isBlankImage as jest.Mock).mockResolvedValue(true);
+    const onCapture = jest.fn();
+    const runner = new ScriptRunner({ caseDir: '/tmp/case', platform: 'whatsapp', onCapture });
+    const blockedListener = jest.fn();
+
+    runner.on('captureBlocked', blockedListener);
+    expect(await runner.run([{ kind: 'capture', section: 'chat_1', source: 'whatsapp' }])).toBe(true);
+
+    expect(blockedListener).toHaveBeenCalledWith('chat_1', path);
+    expect(onCapture).toHaveBeenCalledWith(path, 'chat_1', 'whatsapp');
+    expect(runner.getBlockedCount()).toBe(1);
+    expect(runner.getLog()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'WARNING',
+          details: expect.objectContaining({
+            warning: 'screen may be protected by FLAG_SECURE: chat_1',
+            filePath: path,
+            blockedCaptureCount: 1,
+          }),
+        }),
+      ]),
+    );
   });
 });

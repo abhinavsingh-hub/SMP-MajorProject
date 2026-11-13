@@ -165,6 +165,38 @@ class ScreenCaptureModule(private val reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
+  fun isBlankImage(imagePath: String, promise: Promise) {
+    try {
+      val bitmap = android.graphics.BitmapFactory.decodeFile(imagePath)
+        ?: run { promise.resolve(false); return }
+
+      val stepX = maxOf(1, bitmap.width / 20)
+      val stepY = maxOf(1, bitmap.height / 20)
+      var totalSampled = 0
+      var nearBlackCount = 0
+
+      var y = 0
+      while (y < bitmap.height) {
+        var x = 0
+        while (x < bitmap.width) {
+          val pixel = bitmap.getPixel(x, y)
+          val r = android.graphics.Color.red(pixel)
+          val g = android.graphics.Color.green(pixel)
+          val b = android.graphics.Color.blue(pixel)
+          if (r < 10 && g < 10 && b < 10) nearBlackCount++
+          totalSampled++
+          x += stepX
+        }
+        y += stepY
+      }
+      bitmap.recycle()
+      promise.resolve(totalSampled > 0 && (nearBlackCount.toDouble() / totalSampled) > 0.98)
+    } catch (e: Exception) {
+      promise.reject("BLANK_CHECK_ERROR", e.message, e)
+    }
+  }
+
+  @ReactMethod
   fun stop(promise: Promise) {
     try {
       ScreenCaptureService.stop(reactContext)

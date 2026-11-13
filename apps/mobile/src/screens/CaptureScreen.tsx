@@ -101,6 +101,9 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
         onCapture: async (path, section, source) => {
           await evidenceService.onCapture(path, section, source);
         },
+        onCaptureBlocked: async (path, section) => {
+          await evidenceService.recordCaptureBlocked(section, path);
+        },
       });
       runnerRef.current = runner;
 

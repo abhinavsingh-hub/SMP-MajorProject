@@ -1,5 +1,6 @@
 import type { Step } from '../runner/types';
 import { buildTelegramScript } from './telegram/telegramScript';
+import { buildWhatsAppScript } from './whatsapp/whatsappScript';
 
 export interface ScriptOptions {
   maxChats?: number;
@@ -15,6 +16,11 @@ export type PlatformScriptBuilder = (options?: ScriptOptions) => Step[];
 export const scriptRegistry: Record<string, PlatformScriptBuilder> = {
   telegram: (options) =>
     buildTelegramScript({
+      maxChats: options?.maxChats ?? 3,
+      scrollsPerSection: options?.scrollsPerSection ?? 2,
+    }),
+  whatsapp: (options) =>
+    buildWhatsAppScript({
       maxChats: options?.maxChats ?? 3,
       scrollsPerSection: options?.scrollsPerSection ?? 2,
     }),

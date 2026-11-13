@@ -178,6 +178,25 @@ export class EvidenceService {
     );
   }
 
+  public async recordCaptureBlocked(section: string, filePath: string): Promise<void> {
+    if (!this.caseFolderPath) return;
+    await appendAudit(
+      this.caseFolderPath,
+      {
+        actor: 'android_app',
+        event_type: 'capture_warning',
+        details: {
+          severity: 'WARNING',
+          warning: `screen may be protected by FLAG_SECURE: ${section}`,
+          filePath,
+          section,
+        },
+      },
+      this.fs,
+      this.sha256,
+    );
+  }
+
   public async recordPaused(): Promise<void> {
     if (!this.caseFolderPath) return;
     await appendAudit(
