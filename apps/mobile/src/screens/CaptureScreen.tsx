@@ -1,6 +1,8 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  Alert,
+  BackHandler,
+  Image,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -8,783 +10,282 @@ import {
   Text,
   View,
 } from 'react-native';
+import { activateKeepAwake, deactivateKeepAwake } from '@sayem314/react-native-keep-awake';
 import type { CaseVerificationResult } from '@socialparse/core';
 import type { CaptureScreenProps } from '../navigation/types';
-import { ScreenCapture } from '../native/ScreenCapture';
 import { Accessibility, useAccessibilityStatus } from '../native/Accessibility';
-import { ScriptRunner } from '../runner/ScriptRunner';
-import type { LogEntry } from '../runner/types';
+import { ScreenCapture } from '../native/ScreenCapture';
 import { EvidenceService } from '../evidence/EvidenceService';
+import { ScriptRunner } from '../runner/ScriptRunner';
+import { useScriptRunner } from '../runner/useScriptRunner';
 import { getScriptForPlatform, isPlatformSupported } from '../scripts';
+import { ProgressBar } from '../components/ProgressBar';
+import { CounterBadge } from '../components/CounterBadge';
+import { EventRow } from '../components/EventRow';
 
-export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
+export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation }) => {
   const { platform, caseNumber, examinerName, accusedName, caseDir } = route.params;
-
   const isAccessibilityEnabled = useAccessibilityStatus();
-  const evidenceService = useMemo(
-    () => new EvidenceService(caseDir, platform),
-    [caseDir, platform],
-  );
-
+  const evidenceService = useMemo(() => new EvidenceService(caseDir, platform), [caseDir, platform]);
   const isSupported = isPlatformSupported(platform);
-
-  // Screen Capture States
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [captureStatus, setCaptureStatus] = useState('');
-  const [savedFilePath, setSavedFilePath] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-
-  // Script Runner States
-  const [runnerState, setRunnerState] = useState<
-    'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error'
-  >('idle');
-  const [progressInfo, setProgressInfo] = useState({ current: 0, total: 0 });
-  const [runnerLogs, setRunnerLogs] = useState<LogEntry[]>([]);
-  const runnerRef = useRef<ScriptRunner | null>(null);
-
-  // Verification State
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<CaseVerificationResult | null>(null);
+  const allowLeaveRef = useRef(false);
 
-  const handleTestCapture = async () => {
-    try {
-      setIsCapturing(true);
-      setErrorMessage('');
-      setCaptureStatus('Requesting MediaProjection consent...');
+  const runner = useMemo(
+    () => new ScriptRunner({
+      caseDir,
+      platform,
+      onCapture: (path, section, source) => evidenceService.onCapture(path, section, source).then(() => undefined),
+      onCaptureBlocked: (path, section) => evidenceService.recordCaptureBlocked(section, path),
+    }),
+    [caseDir, platform, evidenceService],
+  );
+  const view = useScriptRunner(runner);
+  const active = view.status === 'running' || view.status === 'paused';
+  const statusStyle = {
+    idle: styles.status_idle,
+    running: styles.status_running,
+    paused: styles.status_paused,
+    stopped: styles.status_stopped,
+    done: styles.status_done,
+    error: styles.status_error,
+  }[view.status];
 
-      await ScreenCapture.requestPermission();
+  useEffect(() => {
+    if (!active) return undefined;
+    activateKeepAwake();
+    return () => deactivateKeepAwake();
+  }, [active]);
 
-      setCaptureStatus('Capturing screen frame via ImageReader...');
-      const targetPath = `${caseDir}/${platform}/screenshots/manual_${Date.now()}.png`;
+  useEffect(() => {
+    const subscriptions = [
+      runner.on('paused', () => { void evidenceService.recordPaused(); }),
+      runner.on('stopped', () => { void evidenceService.recordStopped(); }),
+      runner.on('done', () => { void evidenceService.recordDone(); }),
+      runner.on('stepFailed', (step, _index, error) => {
+        void evidenceService.recordStepFailed(step.label ?? step.kind, error.message);
+      }),
+      runner.on('error', (error) => {
+        setErrorMessage(error.message);
+        void evidenceService.recordStepFailed('pipeline_error', error.message);
+      }),
+    ];
+    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+  }, [runner, evidenceService]);
 
-      const resultPath = await ScreenCapture.captureScreenshot(targetPath);
-      setSavedFilePath(resultPath);
-
-      // Record to core manifest, hashes.csv and audit_log
-      await evidenceService.onCapture(resultPath, 'manual_screen', 'examiner_button');
-
-      setCaptureStatus('Screenshot recorded in manifest.json & hashes.csv');
-    } catch (err: unknown) {
-      const errStr = err instanceof Error ? err.message : String(err);
-      setErrorMessage(errStr);
-      setCaptureStatus('');
-    } finally {
-      setIsCapturing(false);
-    }
-  };
-
-  const handleOpenSettings = async () => {
-    try {
-      await Accessibility.openSettings();
-    } catch (err: unknown) {
-      const errStr = err instanceof Error ? err.message : String(err);
-      setErrorMessage(errStr);
-    }
-  };
-
-  const handleStartCapturePipeline = async () => {
-    try {
-      if (!isSupported) {
-        throw new Error(`Automated script is not yet configured for ${platform}`);
-      }
-
-      setErrorMessage('');
-      setRunnerLogs([]);
-      setRunnerState('running');
-
-      const steps = getScriptForPlatform(platform, { maxChats: 3, scrollsPerSection: 2 });
-      setProgressInfo({ current: 0, total: steps.length });
-
-      const runner = new ScriptRunner({
-        caseDir,
-        platform,
-        onCapture: async (path, section, source) => {
-          await evidenceService.onCapture(path, section, source);
+  const confirmLeave = useCallback((onLeave: () => void) => {
+    Alert.alert('Capture in progress', 'Leaving will stop the current capture run.', [
+      { text: 'Stay', style: 'cancel' },
+      {
+        text: 'Stop and leave',
+        style: 'destructive',
+        onPress: () => {
+          allowLeaveRef.current = true;
+          runner.stop();
+          onLeave();
         },
-        onCaptureBlocked: async (path, section) => {
-          await evidenceService.recordCaptureBlocked(section, path);
-        },
-      });
-      runnerRef.current = runner;
+      },
+    ]);
+  }, [runner]);
 
-      runner.on('progress', (index, total) => {
-        setProgressInfo({ current: index, total });
-        setRunnerLogs([...runner.getLog()]);
-      });
+  useEffect(() => navigation.addListener('beforeRemove', (event) => {
+    if (!active || allowLeaveRef.current) return;
+    event.preventDefault();
+    confirmLeave(() => navigation.dispatch(event.data.action));
+  }), [active, confirmLeave, navigation]);
 
-      runner.on('stepStart', () => {
-        setRunnerLogs([...runner.getLog()]);
-      });
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!active) return false;
+      confirmLeave(() => navigation.goBack());
+      return true;
+    });
+    return () => subscription.remove();
+  }, [active, confirmLeave, navigation]);
 
-      runner.on('stepSuccess', () => {
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      runner.on('stepFailed', (step, _idx, err) => {
-        evidenceService.recordStepFailed(step.label ?? step.kind, err.message);
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      runner.on('capture', (_section, path) => {
-        setSavedFilePath(path);
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      runner.on('paused', () => {
-        evidenceService.recordPaused();
-        setRunnerState('paused');
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      runner.on('resumed', () => {
-        setRunnerState('running');
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      runner.on('stopped', () => {
-        evidenceService.recordStopped();
-        setRunnerState('stopped');
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      runner.on('done', () => {
-        evidenceService.recordDone();
-        setRunnerState('done');
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      runner.on('error', (err) => {
-        evidenceService.recordStepFailed('pipeline_error', err.message);
-        setRunnerState('error');
-        setErrorMessage(err.message);
-        setRunnerLogs([...runner.getLog()]);
-      });
-
-      await runner.run(steps);
-    } catch (err: unknown) {
-      const errStr = err instanceof Error ? err.message : String(err);
-      setErrorMessage(errStr);
-      setRunnerState('error');
+  const handleStart = async () => {
+    try {
+      if (!isSupported) throw new Error(`Automated script is not configured for ${platform}`);
+      if (!isAccessibilityEnabled) return;
+      setErrorMessage('');
+      const permissionGranted = await ScreenCapture.requestPermission();
+      if (!permissionGranted) return;
+      await runner.run(getScriptForPlatform(platform, { maxChats: 3, maxPosts: 3, scrollsPerSection: 2 }));
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
     }
   };
 
   const handlePauseResume = () => {
-    if (!runnerRef.current) return;
-    if (runnerState === 'running') {
-      runnerRef.current.pause();
-    } else if (runnerState === 'paused') {
-      runnerRef.current.resume();
-    }
+    if (view.status === 'running') runner.pause();
+    else if (view.status === 'paused') runner.resume();
   };
 
-  const handleStop = () => {
-    if (!runnerRef.current) return;
-    runnerRef.current.stop();
-  };
-
-  const handleVerifyCase = async () => {
+  const handleVerify = async () => {
     try {
       setIsVerifying(true);
       setErrorMessage('');
-      const res = await evidenceService.verifyCaseIntegrity();
-      setVerificationResult(res);
-    } catch (err: unknown) {
-      const errStr = err instanceof Error ? err.message : String(err);
-      setErrorMessage(`Verification failed: ${errStr}`);
+      setVerificationResult(await evidenceService.verifyCaseIntegrity());
+    } catch (error: unknown) {
+      setErrorMessage(`Verification failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsVerifying(false);
     }
   };
 
+  const isDone = view.status === 'done';
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.card}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{platform.toUpperCase()} EVIDENCE CAPTURE</Text>
+    <SafeAreaView style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <View style={styles.platformMark}><Text style={styles.platformMarkText}>{platform.slice(0, 1).toUpperCase()}</Text></View>
+          <View style={styles.headerText}>
+            <Text style={styles.eyebrow}>EVIDENCE CAPTURE</Text>
+            <Text style={styles.title}>{platform.charAt(0).toUpperCase() + platform.slice(1)}</Text>
+            <Text style={styles.caseNumber}>Case {caseNumber}</Text>
           </View>
-
-          <Text style={styles.title}>Forensic Capture Session</Text>
-          <Text style={styles.subtitle}>
-            Target: {platform.toUpperCase()} (Automated Accessibility & MediaProjection Pipeline)
-          </Text>
-
-          {/* Accessibility Service Status */}
-          <View style={styles.accessibilityCard}>
-            <View style={styles.accessibilityInfo}>
-              <Text style={styles.accessibilityLabel}>Accessibility:</Text>
-              <View
-                style={[
-                  styles.statusBadge,
-                  isAccessibilityEnabled ? styles.statusBadgeEnabled : styles.statusBadgeDisabled,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusBadgeText,
-                    isAccessibilityEnabled
-                      ? styles.statusBadgeTextEnabled
-                      : styles.statusBadgeTextDisabled,
-                  ]}
-                >
-                  {isAccessibilityEnabled ? 'enabled' : 'disabled'}
-                </Text>
-              </View>
-            </View>
-            {!isAccessibilityEnabled ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.enableButton,
-                  pressed && styles.enableButtonPressed,
-                ]}
-                onPress={handleOpenSettings}
-              >
-                <Text style={styles.enableButtonText}>Enable</Text>
-              </Pressable>
-            ) : null}
-          </View>
-
-          {/* Case Metadata Details */}
-          <View style={styles.detailsTable}>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Case Reference:</Text>
-              <Text style={styles.detailValue}>{caseNumber}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Case Folder:</Text>
-              <Text
-                style={[styles.detailValue, styles.pathText]}
-                numberOfLines={1}
-                ellipsizeMode="middle"
-              >
-                {caseDir}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Target Platform:</Text>
-              <Text style={styles.detailValue}>{platform}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Lead Examiner:</Text>
-              <Text style={styles.detailValue}>{examinerName}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Accused / Subject:</Text>
-              <Text style={styles.detailValue}>{accusedName}</Text>
-            </View>
-          </View>
-
-          {/* Automated Pipeline Control Section */}
-          <View style={styles.runnerControlSection}>
-            <Text style={styles.sectionTitle}>
-              Automated Forensic Extraction ({platform.toUpperCase()})
-            </Text>
-            {runnerState !== 'idle' ? (
-              <Text style={styles.runnerStatusText}>
-                Status:{' '}
-                <Text style={styles.boldStatus}>
-                  {runnerState.toUpperCase()}
-                  {progressInfo.total > 0
-                    ? ` (Step ${progressInfo.current}/${progressInfo.total})`
-                    : ''}
-                </Text>
-              </Text>
-            ) : null}
-
-            <View style={styles.buttonRow}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.runButton,
-                  pressed && styles.runButtonPressed,
-                  (!isSupported ||
-                    !isAccessibilityEnabled ||
-                    runnerState === 'running' ||
-                    runnerState === 'paused') &&
-                    styles.buttonDisabled,
-                ]}
-                onPress={handleStartCapturePipeline}
-                disabled={
-                  !isSupported ||
-                  !isAccessibilityEnabled ||
-                  runnerState === 'running' ||
-                  runnerState === 'paused'
-                }
-              >
-                {runnerState === 'running' ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Text style={styles.buttonText}>
-                    {isSupported ? `Start ${platform} Capture` : `${platform} Unsupported`}
-                  </Text>
-                )}
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.controlButton,
-                  styles.pauseButton,
-                  pressed && styles.controlButtonPressed,
-                  (runnerState !== 'running' && runnerState !== 'paused') && styles.buttonDisabled,
-                ]}
-                onPress={handlePauseResume}
-                disabled={runnerState !== 'running' && runnerState !== 'paused'}
-              >
-                <Text style={styles.buttonText}>
-                  {runnerState === 'paused' ? 'Resume' : 'Pause'}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.controlButton,
-                  styles.stopButton,
-                  pressed && styles.controlButtonPressed,
-                  (runnerState !== 'running' && runnerState !== 'paused') && styles.buttonDisabled,
-                ]}
-                onPress={handleStop}
-                disabled={runnerState !== 'running' && runnerState !== 'paused'}
-              >
-                <Text style={styles.buttonText}>Stop</Text>
-              </Pressable>
-            </View>
-
-            {/* Live ScriptRunner Log Stream */}
-            {runnerLogs.length > 0 ? (
-              <View style={styles.logContainer}>
-                <Text style={styles.logHeader}>Live Capture Log ({runnerLogs.length} events):</Text>
-                <ScrollView nestedScrollEnabled style={styles.logScrollView}>
-                  {runnerLogs.map((log, idx) => (
-                    <View key={idx} style={styles.logLine}>
-                      <Text style={styles.logTimestamp}>{log.timestamp.slice(11, 19)}</Text>
-                      <Text style={styles.logEvent}>[{log.event}]</Text>
-                      <Text style={styles.logMessage}>
-                        {log.label ? `${log.label} ` : ''}
-                        {log.details ? JSON.stringify(log.details) : ''}
-                      </Text>
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Case Integrity Verification Section */}
-          <View style={styles.verificationSection}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.verifyButton,
-                pressed && styles.verifyButtonPressed,
-                isVerifying && styles.buttonDisabled,
-              ]}
-              onPress={handleVerifyCase}
-              disabled={isVerifying}
-            >
-              {isVerifying ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.buttonText}>Verify Case Integrity (core.verifyCase)</Text>
-              )}
-            </Pressable>
-
-            {verificationResult ? (
-              <View
-                style={[
-                  styles.verifyResultBox,
-                  verificationResult.passed
-                    ? styles.verifyBoxPassed
-                    : styles.verifyBoxFailed,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.verifyTitle,
-                    verificationResult.passed
-                      ? styles.verifyTextPassed
-                      : styles.verifyTextFailed,
-                  ]}
-                >
-                  {verificationResult.passed
-                    ? `Verification OK: ${verificationResult.itemsChecked} items verified, audit chain intact`
-                    : `Verification FAILED: ${verificationResult.issues.length} issue(s) detected`}
-                </Text>
-                {!verificationResult.passed && verificationResult.issues.length > 0 ? (
-                  <View style={styles.issuesList}>
-                    {verificationResult.issues.map((issue, idx) => (
-                      <Text key={idx} style={styles.issueText}>
-                        • {issue}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-
-          {/* Standalone One-Shot Screenshot Test */}
-          <View style={styles.actionSection}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.captureButton,
-                pressed && styles.captureButtonPressed,
-                isCapturing && styles.buttonDisabled,
-              ]}
-              onPress={handleTestCapture}
-              disabled={isCapturing}
-            >
-              {isCapturing ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.buttonText}>Test Manual Screenshot Capture</Text>
-              )}
-            </Pressable>
-
-            {captureStatus ? <Text style={styles.statusText}>{captureStatus}</Text> : null}
-            {errorMessage ? <Text style={styles.errorText}>Error: {errorMessage}</Text> : null}
-
-            {savedFilePath ? (
-              <View style={styles.resultBox}>
-                <Text style={styles.resultLabel}>Last Captured PNG:</Text>
-                <Text style={styles.resultPath} numberOfLines={2} selectable>
-                  {savedFilePath}
-                </Text>
-              </View>
-            ) : null}
+          <View style={[styles.statusPill, statusStyle]}>
+            <Text style={styles.statusText}>{view.status.toUpperCase()}</Text>
           </View>
         </View>
+
+        {!isAccessibilityEnabled ? (
+          <View style={styles.accessibilityBanner}>
+            <View style={styles.bannerCopy}>
+              <Text style={styles.bannerTitle}>Accessibility service is off</Text>
+              <Text style={styles.bannerText}>Enable it to let the capture script navigate the app.</Text>
+            </View>
+            <Pressable style={styles.enableButton} onPress={() => void Accessibility.openSettings()}>
+              <Text style={styles.enableText}>Enable</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Run progress</Text>
+          <ProgressBar index={view.progress.index} total={view.progress.total} label={view.currentLabel} />
+          <View style={styles.counters}>
+            <CounterBadge label="Captured" count={view.captureCount} color="#38bdf8" />
+            <CounterBadge label="Failed" count={view.failedCount} color="#fb7185" />
+            <CounterBadge label="Blocked" count={view.blockedCount} color="#fbbf24" />
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.sectionHeading}>
+            <Text style={styles.sectionTitle}>Latest screenshot</Text>
+            {view.lastScreenshotPath ? <Text style={styles.smallMuted}>Evidence file saved</Text> : null}
+          </View>
+          {view.lastScreenshotPath ? (
+            <Image source={{ uri: `file://${view.lastScreenshotPath}` }} style={styles.preview} resizeMode="contain" />
+          ) : (
+            <View style={styles.previewEmpty}><Text style={styles.emptyText}>A capture preview will appear here.</Text></View>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.sectionHeading}>
+            <Text style={styles.sectionTitle}>Recent activity</Text>
+            <Text style={styles.smallMuted}>{view.recentEvents.length} / 50</Text>
+          </View>
+          {view.recentEvents.length ? view.recentEvents.map((event) => <EventRow key={event.id} event={event} />) : (
+            <Text style={styles.emptyText}>Capture events will appear here.</Text>
+          )}
+        </View>
+
+        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+        {verificationResult ? (
+          <View style={[styles.verification, verificationResult.passed ? styles.passed : styles.failed]}>
+            <Text style={styles.verificationText}>
+              {verificationResult.passed
+                ? `Integrity verified · ${verificationResult.itemsChecked} items`
+                : `Verification found ${verificationResult.issues.length} issue(s)`}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={styles.controls}>
+          {view.status === 'idle' ? (
+            <Pressable
+              style={[styles.primaryButton, (!isAccessibilityEnabled || !isSupported) && styles.disabled]}
+              onPress={handleStart}
+              disabled={!isAccessibilityEnabled || !isSupported}
+            >
+              <Text style={styles.primaryButtonText}>{isSupported ? 'Start capture' : 'Platform unsupported'}</Text>
+            </Pressable>
+          ) : null}
+          {view.status === 'running' || view.status === 'paused' ? (
+            <>
+              <Pressable style={styles.secondaryButton} onPress={handlePauseResume}>
+                <Text style={styles.secondaryText}>{view.status === 'paused' ? 'Resume' : 'Pause'}</Text>
+              </Pressable>
+              <Pressable style={styles.stopButton} onPress={() => Alert.alert('Stop capture?', 'The current run will be stopped.', [
+                { text: 'Continue capture', style: 'cancel' },
+                { text: 'Stop', style: 'destructive', onPress: () => runner.stop() },
+              ])}>
+                <Text style={styles.primaryButtonText}>Stop</Text>
+              </Pressable>
+            </>
+          ) : null}
+          <Pressable style={[styles.secondaryButton, !isDone && styles.disabled]} disabled={!isDone || isVerifying} onPress={handleVerify}>
+            <Text style={styles.secondaryText}>{isVerifying ? 'Verifying…' : 'Verify case'}</Text>
+          </Pressable>
+          <Pressable style={[styles.secondaryButton, !isDone && styles.disabled]} disabled={!isDone} onPress={() => Alert.alert('Export', 'Export is not available yet.')}>
+            <Text style={styles.secondaryText}>Export</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.examinerNote}>{examinerName} · Subject: {accusedName}</Text>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#090d16',
-  },
-  scrollContent: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  card: {
-    backgroundColor: '#0f172a',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    width: '100%',
-    maxWidth: 440,
-    alignItems: 'center',
-  },
-  badge: {
-    backgroundColor: '#0369a130',
-    borderWidth: 1,
-    borderColor: '#0284c7',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 6,
-    marginBottom: 14,
-  },
-  badgeText: {
-    color: '#38bdf8',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  accessibilityCard: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1e293b70',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 14,
-  },
-  accessibilityInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  accessibilityLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#e2e8f0',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusBadgeEnabled: {
-    backgroundColor: '#05966925',
-    borderColor: '#10b981',
-    borderWidth: 1,
-  },
-  statusBadgeDisabled: {
-    backgroundColor: '#dc262625',
-    borderColor: '#f87171',
-    borderWidth: 1,
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  statusBadgeTextEnabled: {
-    color: '#34d399',
-  },
-  statusBadgeTextDisabled: {
-    color: '#f87171',
-  },
-  enableButton: {
-    backgroundColor: '#0284c7',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  enableButtonPressed: {
-    backgroundColor: '#0369a1',
-  },
-  enableButtonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  detailsTable: {
-    width: '100%',
-    backgroundColor: '#1e293b50',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    gap: 8,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: '#94a3b8',
-  },
-  detailValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#e2e8f0',
-  },
-  pathText: {
-    fontSize: 11,
-    fontFamily: 'monospace',
-    color: '#38bdf8',
-    maxWidth: 200,
-  },
-  runnerControlSection: {
-    width: '100%',
-    marginTop: 18,
-    backgroundColor: '#1e293b40',
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    gap: 10,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#38bdf8',
-  },
-  runnerStatusText: {
-    fontSize: 12,
-    color: '#94a3b8',
-  },
-  boldStatus: {
-    fontWeight: '700',
-    color: '#e2e8f0',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  runButton: {
-    flex: 2,
-    backgroundColor: '#0284c7',
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  runButtonPressed: {
-    backgroundColor: '#0369a1',
-  },
-  controlButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pauseButton: {
-    backgroundColor: '#d97706',
-  },
-  stopButton: {
-    backgroundColor: '#dc2626',
-  },
-  controlButtonPressed: {
-    opacity: 0.8,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  logContainer: {
-    backgroundColor: '#090d16',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#334155',
-    maxHeight: 180,
-  },
-  logHeader: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94a3b8',
-    marginBottom: 6,
-  },
-  logScrollView: {
-    maxHeight: 140,
-  },
-  logLine: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginBottom: 3,
-  },
-  logTimestamp: {
-    fontSize: 10,
-    color: '#64748b',
-    fontFamily: 'monospace',
-  },
-  logEvent: {
-    fontSize: 10,
-    color: '#38bdf8',
-    fontWeight: '700',
-    fontFamily: 'monospace',
-  },
-  logMessage: {
-    fontSize: 10,
-    color: '#cbd5e1',
-    fontFamily: 'monospace',
-    flexShrink: 1,
-  },
-  verificationSection: {
-    width: '100%',
-    marginTop: 14,
-    gap: 8,
-  },
-  verifyButton: {
-    backgroundColor: '#475569',
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  verifyButtonPressed: {
-    backgroundColor: '#334155',
-  },
-  verifyResultBox: {
-    padding: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    gap: 4,
-  },
-  verifyBoxPassed: {
-    backgroundColor: '#05966915',
-    borderColor: '#10b981',
-  },
-  verifyBoxFailed: {
-    backgroundColor: '#dc262615',
-    borderColor: '#ef4444',
-  },
-  verifyTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  verifyTextPassed: {
-    color: '#34d399',
-  },
-  verifyTextFailed: {
-    color: '#f87171',
-  },
-  issuesList: {
-    marginTop: 4,
-    gap: 2,
-  },
-  issueText: {
-    fontSize: 11,
-    color: '#fca5a5',
-    fontFamily: 'monospace',
-  },
-  actionSection: {
-    width: '100%',
-    marginTop: 14,
-    gap: 8,
-  },
-  captureButton: {
-    backgroundColor: '#0f766e',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  captureButtonPressed: {
-    backgroundColor: '#115e59',
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#38bdf8',
-    textAlign: 'center',
-  },
-  errorText: {
-    fontSize: 12,
-    color: '#ef4444',
-    textAlign: 'center',
-  },
-  resultBox: {
-    backgroundColor: '#1e293b',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-    gap: 2,
-  },
-  resultLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#94a3b8',
-  },
-  resultPath: {
-    fontSize: 11,
-    color: '#a7f3d0',
-    fontFamily: 'monospace',
-  },
+  screen: { flex: 1, backgroundColor: '#080d17' },
+  content: { padding: 18, gap: 14 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  platformMark: { width: 48, height: 48, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0c4a6e' },
+  platformMarkText: { color: '#7dd3fc', fontSize: 22, fontWeight: '800' },
+  headerText: { flex: 1, gap: 2 },
+  eyebrow: { color: '#38bdf8', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
+  title: { color: '#f8fafc', fontSize: 22, fontWeight: '800' },
+  caseNumber: { color: '#94a3b8', fontSize: 12 },
+  statusPill: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#1e293b' },
+  statusText: { color: '#cbd5e1', fontSize: 9, fontWeight: '800' },
+  status_running: { backgroundColor: '#075985' },
+  status_paused: { backgroundColor: '#854d0e' },
+  status_stopped: { backgroundColor: '#7f1d1d' },
+  status_done: { backgroundColor: '#065f46' },
+  status_error: { backgroundColor: '#7f1d1d' },
+  status_idle: { backgroundColor: '#1e293b' },
+  accessibilityBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: '#451a03', borderRadius: 12, borderWidth: 1, borderColor: '#92400e' },
+  bannerCopy: { flex: 1, gap: 4 },
+  bannerTitle: { color: '#fde68a', fontSize: 13, fontWeight: '800' },
+  bannerText: { color: '#fcd34d', fontSize: 11, lineHeight: 16 },
+  enableButton: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8, backgroundColor: '#f59e0b' },
+  enableText: { color: '#1c1917', fontSize: 12, fontWeight: '800' },
+  card: { padding: 16, borderRadius: 16, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#1e293b', gap: 14 },
+  sectionTitle: { color: '#e2e8f0', fontSize: 15, fontWeight: '800' },
+  sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  counters: { flexDirection: 'row', gap: 9 },
+  smallMuted: { color: '#64748b', fontSize: 10 },
+  preview: { width: '100%', height: 215, borderRadius: 10, backgroundColor: '#020617' },
+  previewEmpty: { height: 115, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1220', borderRadius: 10, borderWidth: 1, borderColor: '#1e293b', borderStyle: 'dashed' },
+  emptyText: { color: '#64748b', fontSize: 12, paddingVertical: 8 },
+  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
+  primaryButton: { minWidth: '48%', flexGrow: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 10, backgroundColor: '#0284c7' },
+  primaryButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  secondaryButton: { minWidth: '47%', flexGrow: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 10, backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155' },
+  secondaryText: { color: '#e2e8f0', fontSize: 12, fontWeight: '700' },
+  stopButton: { minWidth: '47%', flexGrow: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 10, backgroundColor: '#b91c1c' },
+  disabled: { opacity: 0.4 },
+  error: { color: '#fda4af', fontSize: 12, padding: 12, backgroundColor: '#4c0519', borderRadius: 10 },
+  verification: { padding: 12, borderRadius: 10, borderWidth: 1 },
+  passed: { backgroundColor: '#064e3b', borderColor: '#10b981' },
+  failed: { backgroundColor: '#4c0519', borderColor: '#fb7185' },
+  verificationText: { color: '#e2e8f0', fontSize: 12, fontWeight: '700' },
+  examinerNote: { color: '#475569', fontSize: 10, textAlign: 'center', paddingBottom: 12 },
 });
