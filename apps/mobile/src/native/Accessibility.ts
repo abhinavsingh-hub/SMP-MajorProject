@@ -9,33 +9,70 @@ const accessibilityEmitter = AccessibilityBridgeModule
 export interface AccessibilityInterface {
   isEnabled(): Promise<boolean>;
   openSettings(): Promise<boolean>;
+  clickByText(text: string, exact?: boolean): Promise<boolean>;
+  clickByViewId(id: string): Promise<boolean>;
+  waitForText(text: string, timeoutMs?: number): Promise<boolean>;
+  scrollForward(): Promise<boolean>;
+  performBack(): Promise<boolean>;
+  performHome(): Promise<boolean>;
+  getForegroundPackage(): Promise<string>;
+  launchApp(packageName: string): Promise<boolean>;
 }
 
 export const Accessibility: AccessibilityInterface = {
   isEnabled: async (): Promise<boolean> => {
-    if (Platform.OS !== 'android') {
-      return false;
-    }
-    if (!AccessibilityBridgeModule) {
-      return false;
-    }
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
     return AccessibilityBridgeModule.isEnabled();
   },
 
   openSettings: async (): Promise<boolean> => {
-    if (Platform.OS !== 'android') {
-      return false;
-    }
-    if (!AccessibilityBridgeModule) {
-      return false;
-    }
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
     return AccessibilityBridgeModule.openSettings();
+  },
+
+  clickByText: async (text: string, exact = false): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
+    return AccessibilityBridgeModule.clickByText(text, exact);
+  },
+
+  clickByViewId: async (id: string): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
+    return AccessibilityBridgeModule.clickByViewId(id);
+  },
+
+  waitForText: async (text: string, timeoutMs = 5000): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
+    return AccessibilityBridgeModule.waitForText(text, timeoutMs);
+  },
+
+  scrollForward: async (): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
+    return AccessibilityBridgeModule.scrollForward();
+  },
+
+  performBack: async (): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
+    return AccessibilityBridgeModule.performBack();
+  },
+
+  performHome: async (): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
+    return AccessibilityBridgeModule.performHome();
+  },
+
+  getForegroundPackage: async (): Promise<string> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return '';
+    return AccessibilityBridgeModule.getForegroundPackage();
+  },
+
+  launchApp: async (packageName: string): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
+    return AccessibilityBridgeModule.launchApp(packageName);
   },
 };
 
 /**
- * Custom React hook to observe the current active status of CaptureAccessibilityService.
- * Listens for native 'accessibilityStatus' events and refreshes on AppState foregrounding.
+ * Custom React hook to observe active status of CaptureAccessibilityService.
  */
 export function useAccessibilityStatus(): boolean {
   const [isEnabled, setIsEnabled] = useState(false);
@@ -43,30 +80,21 @@ export function useAccessibilityStatus(): boolean {
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Initial status query
     Accessibility.isEnabled().then((status) => {
-      if (isMounted) {
-        setIsEnabled(status);
-      }
+      if (isMounted) setIsEnabled(status);
     });
 
-    // 2. Listen for native service connection/disconnection events
     const subscription = accessibilityEmitter?.addListener(
       'accessibilityStatus',
       (event: { enabled: boolean }) => {
-        if (isMounted) {
-          setIsEnabled(Boolean(event.enabled));
-        }
+        if (isMounted) setIsEnabled(Boolean(event.enabled));
       },
     );
 
-    // 3. Re-check when app returns to foreground from system settings
     const appStateSub = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         Accessibility.isEnabled().then((status) => {
-          if (isMounted) {
-            setIsEnabled(status);
-          }
+          if (isMounted) setIsEnabled(status);
         });
       }
     });
