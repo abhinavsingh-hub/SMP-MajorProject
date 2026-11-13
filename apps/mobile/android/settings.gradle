@@ -1,0 +1,19 @@
+pluginManagement {
+    def rnpmPath = file("../node_modules/@react-native/gradle-plugin")
+    if (!rnpmPath.exists()) {
+        rnpmPath = file("../../node_modules/@react-native/gradle-plugin")
+    }
+    includeBuild(rnpmPath)
+}
+
+plugins {
+    id("com.facebook.react.settings")
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    ex.autolinkLibrariesFromCommand()
+}
+
+rootProject.name = 'mobile'
+include ':app'
+includeBuild(file("../node_modules/@react-native/gradle-plugin").exists() ? "../node_modules/@react-native/gradle-plugin" : "../../node_modules/@react-native/gradle-plugin")

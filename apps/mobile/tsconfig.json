@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@socialparse/core": ["../../packages/core/src/index.ts"],
+      "@socialparse/core/*": ["../../packages/core/src/*"],
+      "@smp/core": ["../../packages/core/src/index.ts"],
+      "@smp/core/*": ["../../packages/core/src/*"]
+    }
+  },
+  "include": ["App.tsx", "index.js", "metro.config.js"],
+  "exclude": ["**/node_modules", "**/build", "android"]
+}
