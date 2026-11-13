@@ -26,6 +26,8 @@ import { CounterBadge } from '../components/CounterBadge';
 import { EventRow } from '../components/EventRow';
 import { exportCase, type ExportCaseResult } from '../export/exportCase';
 import { shareCase } from '../export/shareCase';
+import { generateReport, type GenerateReportResult } from '../report/generateReport';
+import Share from 'react-native-share';
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation }) => {
   const { platform, caseNumber, examinerName, accusedName, caseDir } = route.params;
@@ -38,6 +40,9 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
   const [isExporting, setIsExporting] = useState(false);
   const [exportResult, setExportResult] = useState<Extract<ExportCaseResult, { verified: true }> | null>(null);
   const [exportError, setExportError] = useState('');
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportResult, setReportResult] = useState<GenerateReportResult | null>(null);
+  const [reportError, setReportError] = useState('');
   const allowLeaveRef = useRef(false);
 
   const runner = useMemo(
@@ -176,6 +181,33 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
     Alert.alert('Hash copied', 'The ZIP SHA-256 was copied to the clipboard.');
   };
 
+  const handleGenerateReport = async () => {
+    try {
+      setIsGeneratingReport(true);
+      setReportError('');
+      setReportResult(null);
+      setReportResult(await generateReport(caseDir));
+    } catch (error: unknown) {
+      setReportError(`Report generation failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleReportAction = async (share: boolean) => {
+    if (!reportResult) return;
+    try {
+      await Share.open({
+        title: share ? 'Share PDF report' : 'Open PDF report',
+        url: `file://${reportResult.pdfPath}`,
+        type: 'application/pdf',
+        failOnCancel: false,
+      });
+    } catch (error: unknown) {
+      setReportError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const isDone = view.status === 'done';
   const canExport = isDone || view.status === 'stopped';
   return (
@@ -254,6 +286,21 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
           </View>
         ) : null}
 
+        {reportError ? <View style={[styles.verification, styles.failed]}><Text style={styles.verificationText}>{reportError}</Text></View> : null}
+        {reportResult ? (
+          <View style={styles.exportCard}>
+            <Text style={styles.sectionTitle}>PDF report ready{reportResult.pageCount ? ` · ${reportResult.pageCount} pages` : ''}</Text>
+            <Text style={styles.exportLabel}>PDF path</Text>
+            <Text style={styles.exportPath} selectable>{reportResult.pdfPath}</Text>
+            <Text style={styles.exportLabel}>SHA-256</Text>
+            <Text style={styles.hash} selectable>{reportResult.sha256}</Text>
+            <View style={styles.exportButtons}>
+              <Pressable style={styles.primaryButton} onPress={() => void handleReportAction(false)}><Text style={styles.primaryButtonText}>Open</Text></Pressable>
+              <Pressable style={styles.secondaryButton} onPress={() => void handleReportAction(true)}><Text style={styles.secondaryText}>Share</Text></Pressable>
+            </View>
+          </View>
+        ) : null}
+
         {exportResult ? (
           <View style={styles.exportCard}>
             <Text style={styles.sectionTitle}>Case archive ready</Text>
@@ -300,6 +347,9 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
           </Pressable>
           <Pressable style={[styles.secondaryButton, (!canExport || isExporting) && styles.disabled]} disabled={!canExport || isExporting} onPress={() => void handleExport()}>
             {isExporting ? <ActivityIndicator color="#e2e8f0" /> : <Text style={styles.secondaryText}>Export</Text>}
+          </Pressable>
+          <Pressable style={[styles.secondaryButton, (!canExport || isGeneratingReport) && styles.disabled]} disabled={!canExport || isGeneratingReport} onPress={() => void handleGenerateReport()}>
+            {isGeneratingReport ? <ActivityIndicator color="#e2e8f0" /> : <Text style={styles.secondaryText}>Generate report</Text>}
           </Pressable>
         </View>
 
