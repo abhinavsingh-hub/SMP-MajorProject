@@ -1,0 +1,30 @@
+{
+  "name": "@smp/ai-analyzer",
+  "version": "0.1.0",
+  "description": "AI-powered multimodal analysis and Panchnama documentation layer for SocialParse",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src tests",
+    "demo": "tsx src/demo.ts"
+  },
+  "dependencies": {
+    "@smp/core": "*",
+    "pngjs": "^7.0.0",
+    "tesseract.js": "^5.1.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.19.3",
+    "vitest": "^3.0.7"
+  }
+}
+
