@@ -90,3 +90,16 @@ export type {
   VerifyCaseOptions,
   CaseVerificationResult,
 } from './case/verify.ts';
+
+// ---------------------------------------------------------------------------
+// P3-08: HTML Report Template
+// ---------------------------------------------------------------------------
+export {
+  renderReportHtml,
+  buildReportHtml,
+  buildDemoReportHtml,
+  DEMO_CASE,
+  DEMO_ITEMS,
+  SAMPLE_PNG_BASE64,
+} from './report/html.ts';
+export type { BuildReportOptions } from './report/html.ts';
