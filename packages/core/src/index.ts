@@ -81,3 +81,12 @@ export type { CreateCaseInput, CreateCaseResult } from './case/create.ts';
 // ---------------------------------------------------------------------------
 export { recordScreenshot, compactUtcTimestamp } from './case/record.ts';
 export type { RecordScreenshotInput } from './case/record.ts';
+
+// ---------------------------------------------------------------------------
+// P3-07: Case integrity verification
+// ---------------------------------------------------------------------------
+export { verifyCase } from './case/verify.ts';
+export type {
+  VerifyCaseOptions,
+  CaseVerificationResult,
+} from './case/verify.ts';
