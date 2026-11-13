@@ -13,9 +13,9 @@ import type { CaptureScreenProps } from '../navigation/types';
 import { ScreenCapture } from '../native/ScreenCapture';
 import { Accessibility, useAccessibilityStatus } from '../native/Accessibility';
 import { ScriptRunner } from '../runner/ScriptRunner';
-import { demoScript } from '../runner/demoScript';
 import type { LogEntry } from '../runner/types';
 import { EvidenceService } from '../evidence/EvidenceService';
+import { getScriptForPlatform, isPlatformSupported } from '../scripts';
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
   const { platform, caseNumber, examinerName, accusedName, caseDir } = route.params;
@@ -25,6 +25,8 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
     () => new EvidenceService(caseDir, platform),
     [caseDir, platform],
   );
+
+  const isSupported = isPlatformSupported(platform);
 
   // Screen Capture States
   const [isCapturing, setIsCapturing] = useState(false);
@@ -61,7 +63,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
       // Record to core manifest, hashes.csv and audit_log
       await evidenceService.onCapture(resultPath, 'manual_screen', 'examiner_button');
 
-      setCaptureStatus('Screenshot captured, hashed, and recorded in manifest.json & hashes.csv');
+      setCaptureStatus('Screenshot recorded in manifest.json & hashes.csv');
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
       setErrorMessage(errStr);
@@ -80,12 +82,18 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
     }
   };
 
-  const handleStartDemoScript = async () => {
+  const handleStartCapturePipeline = async () => {
     try {
+      if (!isSupported) {
+        throw new Error(`Automated script is not yet configured for ${platform}`);
+      }
+
       setErrorMessage('');
       setRunnerLogs([]);
-      setProgressInfo({ current: 0, total: demoScript.length });
       setRunnerState('running');
+
+      const steps = getScriptForPlatform(platform, { maxChats: 3, scrollsPerSection: 2 });
+      setProgressInfo({ current: 0, total: steps.length });
 
       const runner = new ScriptRunner({
         caseDir,
@@ -143,13 +151,13 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
       });
 
       runner.on('error', (err) => {
-        evidenceService.recordStepFailed('runner_error', err.message);
+        evidenceService.recordStepFailed('pipeline_error', err.message);
         setRunnerState('error');
         setErrorMessage(err.message);
         setRunnerLogs([...runner.getLog()]);
       });
 
-      await runner.run(demoScript);
+      await runner.run(steps);
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
       setErrorMessage(errStr);
@@ -195,7 +203,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
 
           <Text style={styles.title}>Forensic Capture Session</Text>
           <Text style={styles.subtitle}>
-            Active case directory linked to Core Evidence Recorder.
+            Target: {platform.toUpperCase()} (Automated Accessibility & MediaProjection Pipeline)
           </Text>
 
           {/* Accessibility Service Status */}
@@ -241,7 +249,11 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Case Folder:</Text>
-              <Text style={[styles.detailValue, styles.pathText]} numberOfLines={1} ellipsizeMode="middle">
+              <Text
+                style={[styles.detailValue, styles.pathText]}
+                numberOfLines={1}
+                ellipsizeMode="middle"
+              >
                 {caseDir}
               </Text>
             </View>
@@ -259,9 +271,11 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
             </View>
           </View>
 
-          {/* ScriptRunner Demo Control Section */}
+          {/* Automated Pipeline Control Section */}
           <View style={styles.runnerControlSection}>
-            <Text style={styles.sectionTitle}>Automated Capture Pipeline (ScriptRunner)</Text>
+            <Text style={styles.sectionTitle}>
+              Automated Forensic Extraction ({platform.toUpperCase()})
+            </Text>
             {runnerState !== 'idle' ? (
               <Text style={styles.runnerStatusText}>
                 Status:{' '}
@@ -279,15 +293,26 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
                 style={({ pressed }) => [
                   styles.runButton,
                   pressed && styles.runButtonPressed,
-                  (runnerState === 'running' || runnerState === 'paused') && styles.buttonDisabled,
+                  (!isSupported ||
+                    !isAccessibilityEnabled ||
+                    runnerState === 'running' ||
+                    runnerState === 'paused') &&
+                    styles.buttonDisabled,
                 ]}
-                onPress={handleStartDemoScript}
-                disabled={runnerState === 'running' || runnerState === 'paused'}
+                onPress={handleStartCapturePipeline}
+                disabled={
+                  !isSupported ||
+                  !isAccessibilityEnabled ||
+                  runnerState === 'running' ||
+                  runnerState === 'paused'
+                }
               >
                 {runnerState === 'running' ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
-                  <Text style={styles.buttonText}>Run Demo Script</Text>
+                  <Text style={styles.buttonText}>
+                    {isSupported ? `Start ${platform} Capture` : `${platform} Unsupported`}
+                  </Text>
                 )}
               </Pressable>
 
@@ -323,7 +348,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
             {/* Live ScriptRunner Log Stream */}
             {runnerLogs.length > 0 ? (
               <View style={styles.logContainer}>
-                <Text style={styles.logHeader}>Live Runner Events ({runnerLogs.length}):</Text>
+                <Text style={styles.logHeader}>Live Capture Log ({runnerLogs.length} events):</Text>
                 <ScrollView nestedScrollEnabled style={styles.logScrollView}>
                   {runnerLogs.map((log, idx) => (
                     <View key={idx} style={styles.logLine}>
@@ -354,7 +379,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
               {isVerifying ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.buttonText}>Verify Case (core.verifyCase)</Text>
+                <Text style={styles.buttonText}>Verify Case Integrity (core.verifyCase)</Text>
               )}
             </Pressable>
 
@@ -406,7 +431,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
               {isCapturing ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.buttonText}>Test One-Shot Capture</Text>
+                <Text style={styles.buttonText}>Test Manual Screenshot Capture</Text>
               )}
             </Pressable>
 
