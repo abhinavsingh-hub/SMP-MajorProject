@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   BackHandler,
   Image,
@@ -10,6 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { activateKeepAwake, deactivateKeepAwake } from '@sayem314/react-native-keep-awake';
 import type { CaseVerificationResult } from '@socialparse/core';
 import type { CaptureScreenProps } from '../navigation/types';
@@ -22,6 +24,8 @@ import { getScriptForPlatform, isPlatformSupported } from '../scripts';
 import { ProgressBar } from '../components/ProgressBar';
 import { CounterBadge } from '../components/CounterBadge';
 import { EventRow } from '../components/EventRow';
+import { exportCase, type ExportCaseResult } from '../export/exportCase';
+import { shareCase } from '../export/shareCase';
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation }) => {
   const { platform, caseNumber, examinerName, accusedName, caseDir } = route.params;
@@ -31,13 +35,17 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
   const [errorMessage, setErrorMessage] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<CaseVerificationResult | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<Extract<ExportCaseResult, { verified: true }> | null>(null);
+  const [exportError, setExportError] = useState('');
   const allowLeaveRef = useRef(false);
 
   const runner = useMemo(
     () => new ScriptRunner({
       caseDir,
       platform,
-      onCapture: (path, section, source) => evidenceService.onCapture(path, section, source).then(() => undefined),
+      onCapture: (path, section, source, capturedAt) =>
+        evidenceService.onCapture(path, section, source, capturedAt).then(() => undefined),
       onCaptureBlocked: (path, section) => evidenceService.recordCaptureBlocked(section, path),
     }),
     [caseDir, platform, evidenceService],
@@ -135,7 +143,41 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
     }
   };
 
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      setExportError('');
+      setExportResult(null);
+      const result = await exportCase(caseDir);
+      if (!result.verified) {
+        setExportError(`Export stopped because case verification failed:\n${result.mismatches.join('\n')}`);
+        return;
+      }
+      setExportResult(result);
+    } catch (error: unknown) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleShareExport = async () => {
+    if (!exportResult) return;
+    try {
+      await shareCase(exportResult.zipPath);
+    } catch (error: unknown) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleCopyHash = () => {
+    if (!exportResult) return;
+    Clipboard.setString(exportResult.sha256);
+    Alert.alert('Hash copied', 'The ZIP SHA-256 was copied to the clipboard.');
+  };
+
   const isDone = view.status === 'done';
+  const canExport = isDone || view.status === 'stopped';
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -206,6 +248,30 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
           </View>
         ) : null}
 
+        {exportError ? (
+          <View style={[styles.verification, styles.failed]}>
+            <Text style={styles.verificationText}>{exportError}</Text>
+          </View>
+        ) : null}
+
+        {exportResult ? (
+          <View style={styles.exportCard}>
+            <Text style={styles.sectionTitle}>Case archive ready</Text>
+            <Text style={styles.exportLabel}>ZIP path</Text>
+            <Text style={styles.exportPath} selectable>{exportResult.zipPath}</Text>
+            <Text style={styles.exportLabel}>SHA-256</Text>
+            <Text style={styles.hash} selectable>{exportResult.sha256}</Text>
+            <View style={styles.exportButtons}>
+              <Pressable style={styles.primaryButton} onPress={() => void handleShareExport()}>
+                <Text style={styles.primaryButtonText}>Share</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryButton} onPress={handleCopyHash}>
+                <Text style={styles.secondaryText}>Copy hash</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.controls}>
           {view.status === 'idle' ? (
             <Pressable
@@ -232,8 +298,8 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route, navigation 
           <Pressable style={[styles.secondaryButton, !isDone && styles.disabled]} disabled={!isDone || isVerifying} onPress={handleVerify}>
             <Text style={styles.secondaryText}>{isVerifying ? 'Verifying…' : 'Verify case'}</Text>
           </Pressable>
-          <Pressable style={[styles.secondaryButton, !isDone && styles.disabled]} disabled={!isDone} onPress={() => Alert.alert('Export', 'Export is not available yet.')}>
-            <Text style={styles.secondaryText}>Export</Text>
+          <Pressable style={[styles.secondaryButton, (!canExport || isExporting) && styles.disabled]} disabled={!canExport || isExporting} onPress={() => void handleExport()}>
+            {isExporting ? <ActivityIndicator color="#e2e8f0" /> : <Text style={styles.secondaryText}>Export</Text>}
           </Pressable>
         </View>
 
@@ -287,5 +353,10 @@ const styles = StyleSheet.create({
   passed: { backgroundColor: '#064e3b', borderColor: '#10b981' },
   failed: { backgroundColor: '#4c0519', borderColor: '#fb7185' },
   verificationText: { color: '#e2e8f0', fontSize: 12, fontWeight: '700' },
+  exportCard: { padding: 15, borderRadius: 14, backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#0e7490', gap: 8 },
+  exportLabel: { marginTop: 5, color: '#7dd3fc', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  exportPath: { color: '#cbd5e1', fontSize: 11, lineHeight: 16 },
+  hash: { color: '#a7f3d0', fontFamily: 'monospace', fontSize: 10, lineHeight: 15 },
+  exportButtons: { flexDirection: 'row', gap: 9, marginTop: 8 },
   examinerNote: { color: '#475569', fontSize: 10, textAlign: 'center', paddingBottom: 12 },
 });

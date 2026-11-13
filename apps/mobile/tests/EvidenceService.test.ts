@@ -1,3 +1,5 @@
+jest.mock('react-native-fs', () => ({ __esModule: true, default: {} }));
+
 import { EvidenceService } from '../src/evidence/EvidenceService';
 import type { FileSystem, DirEntry, WriteOptions } from '@socialparse/core';
 
@@ -86,11 +88,16 @@ describe('EvidenceService', () => {
     expect(await mockFs.exists(`${caseFolder}/audit_log.jsonl`)).toBe(true);
 
     // 2. Pre-stage a screenshot file in mock filesystem
-    const screenshotPath = `${caseFolder}/telegram/screenshots/0001_chat.png`;
+    const screenshotPath = `${caseFolder}/telegram/screenshots/telegram_chat_0001_20261113T120000Z.png`;
     await mockFs.write(screenshotPath, 'PNG_BINARY_MOCK_DATA', { recursive: true });
 
     // 3. Record screenshot
-    const recordedItem = await service.onCapture(screenshotPath, 'chat', 'auto_runner');
+    const recordedItem = await service.onCapture(
+      screenshotPath,
+      'chat',
+      'auto_runner',
+      '2026-11-13T12:00:00.000Z',
+    );
 
     expect(recordedItem.item_id).toBe('ITEM-0001');
     expect(recordedItem.section).toBe('chat');

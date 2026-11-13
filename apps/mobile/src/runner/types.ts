@@ -97,7 +97,7 @@ export type RunnerEvents = {
 export interface ScriptRunnerConfig {
   caseDir: string;
   platform: string;
-  onCapture?: (path: string, section: string, source?: string) => Promise<void> | void;
+  onCapture?: (path: string, section: string, source?: string, capturedAt?: string) => Promise<void> | void;
   onCaptureBlocked?: (path: string, section: string) => Promise<void> | void;
   defaultTimeoutMs?: number;
   retryDelayMs?: number;
