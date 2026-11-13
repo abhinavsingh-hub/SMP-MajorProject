@@ -8,3 +8,4 @@ export * from './types.js';
 export * from './schemas.js';
 export * from './case-reader.js';
 export * from './ocr-service.js';
+export * from './entity-extractor.js';
