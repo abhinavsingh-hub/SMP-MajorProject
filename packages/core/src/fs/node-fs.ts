@@ -14,6 +14,11 @@ export class NodeFileSystem implements FileSystem {
     return fsp.readFile(filePath, 'utf-8');
   }
 
+  async readBinary(filePath: string): Promise<Uint8Array> {
+    const buf = await fsp.readFile(filePath);
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+
   async write(
     filePath: string,
     content: string,
@@ -23,6 +28,17 @@ export class NodeFileSystem implements FileSystem {
       await fsp.mkdir(path.dirname(filePath), { recursive: true });
     }
     await fsp.writeFile(filePath, content, 'utf-8');
+  }
+
+  async writeBinary(
+    filePath: string,
+    content: Uint8Array,
+    options?: WriteOptions,
+  ): Promise<void> {
+    if (options?.recursive) {
+      await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    }
+    await fsp.writeFile(filePath, content);
   }
 
   async append(filePath: string, content: string): Promise<void> {
@@ -47,15 +63,23 @@ export class NodeFileSystem implements FileSystem {
       return false;
     }
   }
+
+  async stat(targetPath: string): Promise<{ size: number }> {
+    const s = await fsp.stat(targetPath);
+    return { size: s.size };
+  }
 }
 
 /**
  * Node.js SHA-256 helper.
  *
- * Returns the hex digest of a UTF-8 string. Suitable as a `Sha256Fn`
- * argument for audit-log functions.
+ * Returns the hex digest of a UTF-8 string or raw bytes (Uint8Array).
+ * Suitable as a `Sha256Fn` argument for audit-log and screenshot recording functions.
  */
-export async function nodeSha256(data: string): Promise<string> {
+export async function nodeSha256(data: string | Uint8Array): Promise<string> {
   const { createHash } = await import('node:crypto');
-  return createHash('sha256').update(data, 'utf-8').digest('hex');
+  if (typeof data === 'string') {
+    return createHash('sha256').update(data, 'utf-8').digest('hex');
+  }
+  return createHash('sha256').update(data).digest('hex');
 }

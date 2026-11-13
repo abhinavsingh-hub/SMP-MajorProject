@@ -49,11 +49,21 @@ export interface FileSystem {
   /** Read the entire file as a UTF-8 string. Throws if not found. */
   read(path: string): Promise<string>;
 
+  /** Optional: read file as raw bytes (Uint8Array). */
+  readBinary?(path: string): Promise<Uint8Array>;
+
   /**
    * Write `content` (UTF-8) to `path`, creating or overwriting the file.
    * With `options.recursive: true` parent directories are created as needed.
    */
   write(path: string, content: string, options?: WriteOptions): Promise<void>;
+
+  /** Optional: write raw bytes (Uint8Array) to `path`. */
+  writeBinary?(
+    path: string,
+    content: Uint8Array,
+    options?: WriteOptions,
+  ): Promise<void>;
 
   /** Append `content` (UTF-8) to `path`, creating the file if necessary. */
   append(path: string, content: string): Promise<void>;
@@ -63,4 +73,7 @@ export interface FileSystem {
 
   /** Return `true` if the path (file or directory) exists. Never throws. */
   exists(path: string): Promise<boolean>;
+
+  /** Optional: get file metadata such as size. */
+  stat?(path: string): Promise<{ size: number }>;
 }
