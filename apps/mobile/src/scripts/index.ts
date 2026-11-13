@@ -1,10 +1,13 @@
 import type { Step } from '../runner/types';
 import { buildTelegramScript } from './telegram/telegramScript';
 import { buildWhatsAppScript } from './whatsapp/whatsappScript';
+import { buildInstagramScript } from './instagram/instagramScript';
+import { buildFacebookScript } from './facebook/facebookScript';
 
 export interface ScriptOptions {
   maxChats?: number;
   scrollsPerSection?: number;
+  maxPosts?: number;
 }
 
 export type PlatformScriptBuilder = (options?: ScriptOptions) => Step[];
@@ -22,6 +25,16 @@ export const scriptRegistry: Record<string, PlatformScriptBuilder> = {
   whatsapp: (options) =>
     buildWhatsAppScript({
       maxChats: options?.maxChats ?? 3,
+      scrollsPerSection: options?.scrollsPerSection ?? 2,
+    }),
+  instagram: (options) =>
+    buildInstagramScript({
+      maxPosts: options?.maxPosts ?? 3,
+      scrollsPerSection: options?.scrollsPerSection ?? 2,
+    }),
+  facebook: (options) =>
+    buildFacebookScript({
+      maxPosts: options?.maxPosts ?? 3,
       scrollsPerSection: options?.scrollsPerSection ?? 2,
     }),
 };
