@@ -10,6 +10,6 @@
       "@smp/core/*": ["../../packages/core/src/*"]
     }
   },
-  "include": ["App.tsx", "index.js", "metro.config.js"],
+  "include": ["src/**/*", "App.tsx", "index.js", "metro.config.js"],
   "exclude": ["**/node_modules", "**/build", "android"]
 }
