@@ -37,6 +37,7 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
   private isRunning = false;
   private pauseResolver: (() => void) | null = null;
   private captureCounter = 1;
+  private blockedCaptureCount = 0;
   private logs: LogEntry[] = [];
 
   constructor(config: ScriptRunnerConfig) {
@@ -58,6 +59,10 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
 
   public getCaptureCounter(): number {
     return this.captureCounter;
+  }
+
+  public getBlockedCount(): number {
+    return this.blockedCaptureCount;
   }
 
   public pause(): void {
@@ -94,6 +99,7 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
     this.isRunning = true;
     this.isPaused = false;
     this.isStopped = false;
+    this.blockedCaptureCount = 0;
 
     this.addLog('runStart', undefined, `Starting execution of ${steps.length} steps`);
 
@@ -265,6 +271,23 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
         });
 
         this.emit('capture', step.section, savedPath, step.source);
+
+        // FLAG_SECURE / blank-screen detection
+        try {
+          const isBlocked = await ScreenCapture.isBlankImage(savedPath);
+          if (isBlocked) {
+            this.blockedCaptureCount += 1;
+            this.addLog('WARNING', step.label ?? step.section, {
+              warning: `screen may be protected by FLAG_SECURE: ${step.section}`,
+              filePath: savedPath,
+              blockedCaptureCount: this.blockedCaptureCount,
+            });
+            this.emit('captureBlocked', step.section, savedPath);
+            await this.config.onCaptureBlocked?.(savedPath, step.section);
+          }
+        } catch (_e) {
+          // Non-fatal: blank detection failure should not block evidence collection
+        }
 
         if (this.config.onCapture) {
           await this.config.onCapture(savedPath, step.section, step.source);

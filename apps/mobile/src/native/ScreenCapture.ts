@@ -7,6 +7,7 @@ export interface ScreenCaptureInterface {
   captureScreenshot(outputPath?: string): Promise<string>;
   getFilesDir(): Promise<string>;
   stop(): Promise<boolean>;
+  isBlankImage(imagePath: string): Promise<boolean>;
 }
 
 export const ScreenCapture: ScreenCaptureInterface = {
@@ -48,5 +49,10 @@ export const ScreenCapture: ScreenCaptureInterface = {
       return true;
     }
     return ScreenCaptureModule.stop();
+  },
+
+  isBlankImage: async (imagePath: string): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !ScreenCaptureModule) return false;
+    return ScreenCaptureModule.isBlankImage(imagePath);
   },
 };

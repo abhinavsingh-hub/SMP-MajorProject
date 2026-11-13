@@ -85,6 +85,7 @@ export type RunnerEvents = {
   stepSuccess: (step: Step, index: number, result?: unknown) => void;
   stepFailed: (step: Step, index: number, error: Error) => void;
   capture: (section: string, filePath: string, source?: string) => void;
+  captureBlocked: (section: string, filePath: string) => void;
   progress: (index: number, total: number) => void;
   paused: () => void;
   resumed: () => void;
@@ -97,6 +98,7 @@ export interface ScriptRunnerConfig {
   caseDir: string;
   platform: string;
   onCapture?: (path: string, section: string, source?: string) => Promise<void> | void;
+  onCaptureBlocked?: (path: string, section: string) => Promise<void> | void;
   defaultTimeoutMs?: number;
   retryDelayMs?: number;
 }
