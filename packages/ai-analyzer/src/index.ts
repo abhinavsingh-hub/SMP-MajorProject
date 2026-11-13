@@ -16,3 +16,4 @@ export * from './llm-summary-provider.js';
 export * from './audit-logger.js';
 export * from './pipeline.js';
 export * from './analysis-writer.js';
+export * from './report-sections.js';
