@@ -6,6 +6,14 @@ const accessibilityEmitter = AccessibilityBridgeModule
   ? new NativeEventEmitter(AccessibilityBridgeModule)
   : null;
 
+async function callNative<T>(operation: string, call: () => Promise<T>): Promise<T> {
+  try { return await call(); }
+  catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${operation} failed: ${detail}`);
+  }
+}
+
 export interface AccessibilityInterface {
   isEnabled(): Promise<boolean>;
   openSettings(): Promise<boolean>;
@@ -22,59 +30,59 @@ export interface AccessibilityInterface {
 export const Accessibility: AccessibilityInterface = {
   isEnabled: async (): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.isEnabled();
+    return callNative('Checking accessibility service', () => AccessibilityBridgeModule.isEnabled());
   },
 
   openSettings: async (): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.openSettings();
+    return callNative('Opening accessibility settings', () => AccessibilityBridgeModule.openSettings());
   },
 
   clickByText: async (text: string, exact = false): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.clickByText(text, exact);
+    return callNative(`Clicking text ${text}`, () => AccessibilityBridgeModule.clickByText(text, exact));
   },
 
   clickByViewId: async (id: string): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.clickByViewId(id);
+    return callNative(`Clicking view ${id}`, () => AccessibilityBridgeModule.clickByViewId(id));
   },
 
   waitForText: async (text: string, timeoutMs = 5000): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.waitForText(text, timeoutMs);
+    return callNative(`Waiting for text ${text}`, () => AccessibilityBridgeModule.waitForText(text, timeoutMs));
   },
 
   scrollForward: async (): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.scrollForward();
+    return callNative('Scrolling forward', () => AccessibilityBridgeModule.scrollForward());
   },
 
   performBack: async (): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.performBack();
+    return callNative('Performing BACK action', () => AccessibilityBridgeModule.performBack());
   },
 
   performHome: async (): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.performHome();
+    return callNative('Performing HOME action', () => AccessibilityBridgeModule.performHome());
   },
 
   getForegroundPackage: async (): Promise<string> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return '';
-    return AccessibilityBridgeModule.getForegroundPackage();
+    return callNative('Reading foreground package', () => AccessibilityBridgeModule.getForegroundPackage());
   },
 
   launchApp: async (packageName: string): Promise<boolean> => {
     if (Platform.OS !== 'android' || !AccessibilityBridgeModule) return false;
-    return AccessibilityBridgeModule.launchApp(packageName);
+    return callNative(`Launching ${packageName}`, () => AccessibilityBridgeModule.launchApp(packageName));
   },
 };
 
 /**
  * Custom React hook to observe active status of CaptureAccessibilityService.
  */
-export function useAccessibilityStatus(): boolean {
+export function useAccessibilityStatus(onError?: (error: Error) => void): boolean {
   const [isEnabled, setIsEnabled] = useState(false);
 
   useEffect(() => {
@@ -82,6 +90,9 @@ export function useAccessibilityStatus(): boolean {
 
     Accessibility.isEnabled().then((status) => {
       if (isMounted) setIsEnabled(status);
+    }).catch((error: unknown) => {
+      if (isMounted) setIsEnabled(false);
+      onError?.(error instanceof Error ? error : new Error(String(error)));
     });
 
     const subscription = accessibilityEmitter?.addListener(
@@ -95,6 +106,9 @@ export function useAccessibilityStatus(): boolean {
       if (nextAppState === 'active') {
         Accessibility.isEnabled().then((status) => {
           if (isMounted) setIsEnabled(status);
+        }).catch((error: unknown) => {
+          if (isMounted) setIsEnabled(false);
+          onError?.(error instanceof Error ? error : new Error(String(error)));
         });
       }
     });
@@ -104,7 +118,7 @@ export function useAccessibilityStatus(): boolean {
       subscription?.remove();
       appStateSub.remove();
     };
-  }, []);
+  }, [onError]);
 
   return isEnabled;
 }

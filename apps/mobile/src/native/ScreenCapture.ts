@@ -2,6 +2,14 @@ import { NativeModules, Platform } from 'react-native';
 
 const { ScreenCaptureModule } = NativeModules;
 
+async function callNative<T>(operation: string, call: () => Promise<T>): Promise<T> {
+  try { return await call(); }
+  catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${operation} failed: ${detail}`);
+  }
+}
+
 export interface ScreenCaptureInterface {
   requestPermission(): Promise<boolean>;
   captureScreenshot(outputPath?: string): Promise<string>;
@@ -18,7 +26,7 @@ export const ScreenCapture: ScreenCaptureInterface = {
     if (!ScreenCaptureModule) {
       throw new Error('ScreenCaptureModule native module is not linked');
     }
-    return ScreenCaptureModule.requestPermission();
+    return callNative('Requesting screen capture permission', () => ScreenCaptureModule.requestPermission());
   },
 
   captureScreenshot: async (outputPath = ''): Promise<string> => {
@@ -28,7 +36,7 @@ export const ScreenCapture: ScreenCaptureInterface = {
     if (!ScreenCaptureModule) {
       throw new Error('ScreenCaptureModule native module is not linked');
     }
-    return ScreenCaptureModule.captureScreenshot(outputPath);
+    return callNative('Capturing screenshot', () => ScreenCaptureModule.captureScreenshot(outputPath));
   },
 
   getFilesDir: async (): Promise<string> => {
@@ -38,7 +46,7 @@ export const ScreenCapture: ScreenCaptureInterface = {
     if (!ScreenCaptureModule) {
       return '';
     }
-    return ScreenCaptureModule.getFilesDir();
+    return callNative('Reading screen capture files directory', () => ScreenCaptureModule.getFilesDir());
   },
 
   stop: async (): Promise<boolean> => {
@@ -48,11 +56,11 @@ export const ScreenCapture: ScreenCaptureInterface = {
     if (!ScreenCaptureModule) {
       return true;
     }
-    return ScreenCaptureModule.stop();
+    return callNative('Stopping screen capture service', () => ScreenCaptureModule.stop());
   },
 
   isBlankImage: async (imagePath: string): Promise<boolean> => {
     if (Platform.OS !== 'android' || !ScreenCaptureModule) return false;
-    return ScreenCaptureModule.isBlankImage(imagePath);
+    return callNative('Checking captured image', () => ScreenCaptureModule.isBlankImage(imagePath));
   },
 };

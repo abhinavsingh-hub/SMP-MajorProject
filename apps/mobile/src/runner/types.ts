@@ -99,6 +99,15 @@ export interface ScriptRunnerConfig {
   platform: string;
   onCapture?: (path: string, section: string, source?: string, capturedAt?: string) => Promise<void> | void;
   onCaptureBlocked?: (path: string, section: string) => Promise<void> | void;
+  onCaptureProgress?: (lastCompletedIndex: number, nextCaptureCounter: number) => Promise<void> | void;
+  onNativeError?: (operation: string, message: string) => Promise<void> | void;
   defaultTimeoutMs?: number;
   retryDelayMs?: number;
+}
+
+export interface ScriptRunOptions {
+  /** First step to execute; all lower zero-based indexes are considered complete. */
+  startIndex?: number;
+  /** Next screenshot sequence number, restored from the last checkpoint. */
+  captureCounter?: number;
 }

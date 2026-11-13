@@ -1,6 +1,6 @@
 import { Accessibility } from '../native/Accessibility';
 import { ScreenCapture } from '../native/ScreenCapture';
-import type { LogEntry, RunnerEvents, ScriptRunnerConfig, Step } from './types';
+import type { LogEntry, RunnerEvents, ScriptRunOptions, ScriptRunnerConfig, Step } from './types';
 
 export class TypedEventEmitter<Events extends Record<string, (...args: any[]) => void>> {
   private listeners: { [K in keyof Events]?: Array<Events[K]> } = {};
@@ -95,15 +95,20 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
     }
   }
 
-  public async run(steps: Step[]): Promise<boolean> {
+  public async run(steps: Step[], options: ScriptRunOptions = {}): Promise<boolean> {
     this.isRunning = true;
     this.isPaused = false;
     this.isStopped = false;
     this.blockedCaptureCount = 0;
+    this.captureCounter = Math.max(1, options.captureCounter ?? 1);
 
-    this.addLog('runStart', undefined, `Starting execution of ${steps.length} steps`);
+    const startIndex = Math.min(steps.length, Math.max(0, Math.floor(options.startIndex ?? 0)));
+    const isResume = options.startIndex !== undefined;
+    this.addLog(isResume ? 'runResumed' : 'runStart', undefined, isResume
+      ? `Resuming execution at step ${startIndex + 1} of ${steps.length}`
+      : `Starting execution of ${steps.length} steps`);
 
-    for (let i = 0; i < steps.length; i++) {
+    for (let i = startIndex; i < steps.length; i++) {
       if (this.isStopped) {
         this.isRunning = false;
         return false;
@@ -145,6 +150,10 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
 
           const result = await this.executeStep(step);
           stepSuccess = true;
+
+          if (step.kind === 'capture') {
+            await this.config.onCaptureProgress?.(i, this.captureCounter);
+          }
 
           this.addLog('stepSuccess', stepLabel, { attempt, result });
           this.emit('stepSuccess', step, i, result);
@@ -287,8 +296,9 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
             this.emit('captureBlocked', step.section, savedPath);
             await this.config.onCaptureBlocked?.(savedPath, step.section);
           }
-        } catch (_e) {
-          // Non-fatal: blank detection failure should not block evidence collection
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          await this.config.onNativeError?.('blank image detection', message);
         }
 
         if (this.config.onCapture) {

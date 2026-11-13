@@ -7,8 +7,14 @@ react {
     autolinkLibrariesWithApp()
 }
 
-def enableProguardInReleaseBuilds = false
 def jscFlavor = 'io.github.react-native-community:jsc-android:+'
+def releaseSigningProperties = new Properties()
+def releaseSigningFile = new File(System.getProperty('user.home'), '.gradle/gradle.properties')
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.withInputStream { releaseSigningProperties.load(it) }
+}
+def requiredSigningKeys = ['SOCIALPARSE_RELEASE_STORE_FILE', 'SOCIALPARSE_RELEASE_STORE_PASSWORD', 'SOCIALPARSE_RELEASE_KEY_ALIAS', 'SOCIALPARSE_RELEASE_KEY_PASSWORD']
+def releaseSigningReady = requiredSigningKeys.every { releaseSigningProperties.getProperty(it) }
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -31,6 +37,14 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (releaseSigningReady) {
+                storeFile file(releaseSigningProperties.getProperty('SOCIALPARSE_RELEASE_STORE_FILE'))
+                storePassword releaseSigningProperties.getProperty('SOCIALPARSE_RELEASE_STORE_PASSWORD')
+                keyAlias releaseSigningProperties.getProperty('SOCIALPARSE_RELEASE_KEY_ALIAS')
+                keyPassword releaseSigningProperties.getProperty('SOCIALPARSE_RELEASE_KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
@@ -38,8 +52,9 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.debug
-            minifyEnabled enableProguardInReleaseBuilds
+            if (releaseSigningReady) signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
@@ -51,6 +66,12 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    if (!releaseSigningReady && taskGraph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+        throw new GradleException("Release signing is not configured. Add the SOCIALPARSE_RELEASE_* keys to ~/.gradle/gradle.properties.")
     }
 }
 

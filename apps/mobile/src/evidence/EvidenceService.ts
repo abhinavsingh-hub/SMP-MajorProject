@@ -13,6 +13,7 @@ import {
 } from '@smp/core';
 import { RnFileSystem } from './RnFileSystem';
 import { rnSha256 } from './sha256';
+import type { CaptureRunState } from './runState';
 
 export interface CreateCaseParams {
   caseNumber: string;
@@ -157,6 +158,18 @@ export class EvidenceService {
     );
 
     return item;
+  }
+
+  public async writeRunState(state: CaptureRunState): Promise<void> {
+    if (!this.caseFolderPath) return;
+    await this.fs.write(`${this.caseFolderPath}/.run_state.json`, `${JSON.stringify(state, null, 2)}\n`, { recursive: true });
+  }
+
+  public async recordRunResumed(index: number): Promise<void> {
+    if (!this.caseFolderPath) return;
+    await appendAudit(this.caseFolderPath, {
+      actor: 'android_app', event_type: 'run_resumed', details: { index, platform: this.platform },
+    }, this.fs, this.sha256);
   }
 
   public async recordCaptureStart(platform: string): Promise<void> {
