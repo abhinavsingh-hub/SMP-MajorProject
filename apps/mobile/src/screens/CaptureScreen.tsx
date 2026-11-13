@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -11,6 +11,9 @@ import {
 import type { CaptureScreenProps } from '../navigation/types';
 import { ScreenCapture } from '../native/ScreenCapture';
 import { Accessibility, useAccessibilityStatus } from '../native/Accessibility';
+import { ScriptRunner } from '../runner/ScriptRunner';
+import { demoScript } from '../runner/demoScript';
+import type { LogEntry } from '../runner/types';
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
   const { platform, caseNumber, examinerName, accusedName } = route.params;
@@ -19,33 +22,37 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
 
   // Screen Capture States
   const [isCapturing, setIsCapturing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('');
+  const [captureStatus, setCaptureStatus] = useState('');
   const [savedFilePath, setSavedFilePath] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Automation Test States
-  const [isAutomating, setIsAutomating] = useState(false);
-  const [automationLogs, setAutomationLogs] = useState<string[]>([]);
+  // Script Runner States
+  const [runnerState, setRunnerState] = useState<
+    'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'error'
+  >('idle');
+  const [progressInfo, setProgressInfo] = useState({ current: 0, total: 0 });
+  const [runnerLogs, setRunnerLogs] = useState<LogEntry[]>([]);
+  const runnerRef = useRef<ScriptRunner | null>(null);
 
   const handleTestCapture = async () => {
     try {
       setIsCapturing(true);
       setErrorMessage('');
-      setStatusMessage('Requesting MediaProjection consent...');
+      setCaptureStatus('Requesting MediaProjection consent...');
 
       await ScreenCapture.requestPermission();
 
-      setStatusMessage('Capturing screen frame via ImageReader...');
+      setCaptureStatus('Capturing screen frame via ImageReader...');
       const filesDir = await ScreenCapture.getFilesDir();
       const targetPath = `${filesDir}/evidence_${Date.now()}.png`;
 
       const resultPath = await ScreenCapture.captureScreenshot(targetPath);
       setSavedFilePath(resultPath);
-      setStatusMessage('Screenshot captured and saved to files directory.');
+      setCaptureStatus('Screenshot captured and saved to files directory.');
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
       setErrorMessage(errStr);
-      setStatusMessage('');
+      setCaptureStatus('');
     } finally {
       setIsCapturing(false);
     }
@@ -60,46 +67,90 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
     }
   };
 
-  const handleTestAutomation = async () => {
-    const logs: string[] = [];
-    const addLog = (msg: string) => {
-      logs.push(msg);
-      setAutomationLogs([...logs]);
-    };
-
+  const handleStartDemoScript = async () => {
     try {
-      setIsAutomating(true);
-      setAutomationLogs([]);
+      setErrorMessage('');
+      setRunnerLogs([]);
+      setProgressInfo({ current: 0, total: demoScript.length });
+      setRunnerState('running');
 
-      // Step 1: Launch Settings app
-      addLog('Step 1: Launching com.android.settings...');
-      const launched = await Accessibility.launchApp('com.android.settings');
-      addLog(`Step 1 Result: ${launched ? 'Launched successfully' : 'Failed to launch'}`);
+      const filesDir = (await ScreenCapture.getFilesDir()) || '/data/user/0/com.socialparse.mobile/files';
+      const caseDir = `${filesDir}/${caseNumber}`;
 
-      // Step 2: Wait for 'Network'
-      addLog("Step 2: Waiting for text 'Network' (timeout 5s)...");
-      const foundText = await Accessibility.waitForText('Network', 5000);
-      addLog(`Step 2 Result: Text 'Network' ${foundText ? 'found' : 'not found'}`);
+      const runner = new ScriptRunner({
+        caseDir,
+        platform,
+      });
+      runnerRef.current = runner;
 
-      // Step 3: Scroll forward 3 times
-      for (let i = 1; i <= 3; i++) {
-        addLog(`Step 3.${i}: Scrolling forward (${i}/3)...`);
-        const scrolled = await Accessibility.scrollForward();
-        addLog(`Step 3.${i} Result: ${scrolled ? 'Scrolled' : 'Reached end / Not scrollable'}`);
-      }
+      runner.on('progress', (index, total) => {
+        setProgressInfo({ current: index, total });
+        setRunnerLogs([...runner.getLog()]);
+      });
 
-      // Step 4: Perform Back
-      addLog('Step 4: Performing global BACK action...');
-      const backed = await Accessibility.performBack();
-      addLog(`Step 4 Result: ${backed ? 'Back executed' : 'Back failed'}`);
+      runner.on('stepStart', () => {
+        setRunnerLogs([...runner.getLog()]);
+      });
 
-      addLog('Automation sequence completed.');
+      runner.on('stepSuccess', () => {
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      runner.on('stepFailed', () => {
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      runner.on('capture', (_section, path) => {
+        setSavedFilePath(path);
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      runner.on('paused', () => {
+        setRunnerState('paused');
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      runner.on('resumed', () => {
+        setRunnerState('running');
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      runner.on('stopped', () => {
+        setRunnerState('stopped');
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      runner.on('done', () => {
+        setRunnerState('done');
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      runner.on('error', (err) => {
+        setRunnerState('error');
+        setErrorMessage(err.message);
+        setRunnerLogs([...runner.getLog()]);
+      });
+
+      await runner.run(demoScript);
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
-      addLog(`Automation Error: ${errStr}`);
-    } finally {
-      setIsAutomating(false);
+      setErrorMessage(errStr);
+      setRunnerState('error');
     }
+  };
+
+  const handlePauseResume = () => {
+    if (!runnerRef.current) return;
+    if (runnerState === 'running') {
+      runnerRef.current.pause();
+    } else if (runnerState === 'paused') {
+      runnerRef.current.resume();
+    }
+  };
+
+  const handleStop = () => {
+    if (!runnerRef.current) return;
+    runnerRef.current.stop();
   };
 
   return (
@@ -150,6 +201,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
             ) : null}
           </View>
 
+          {/* Case Metadata Details */}
           <View style={styles.detailsTable}>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Case Reference:</Text>
@@ -169,7 +221,88 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
             </View>
           </View>
 
-          {/* Screenshot Test Section */}
+          {/* ScriptRunner Demo Control Section */}
+          <View style={styles.runnerControlSection}>
+            <Text style={styles.sectionTitle}>Automated Capture Pipeline (ScriptRunner)</Text>
+            {runnerState !== 'idle' ? (
+              <Text style={styles.runnerStatusText}>
+                Status:{' '}
+                <Text style={styles.boldStatus}>
+                  {runnerState.toUpperCase()}
+                  {progressInfo.total > 0
+                    ? ` (Step ${progressInfo.current}/${progressInfo.total})`
+                    : ''}
+                </Text>
+              </Text>
+            ) : null}
+
+            <View style={styles.buttonRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.runButton,
+                  pressed && styles.runButtonPressed,
+                  (runnerState === 'running' || runnerState === 'paused') && styles.buttonDisabled,
+                ]}
+                onPress={handleStartDemoScript}
+                disabled={runnerState === 'running' || runnerState === 'paused'}
+              >
+                {runnerState === 'running' ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.buttonText}>Run Demo Script</Text>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.controlButton,
+                  styles.pauseButton,
+                  pressed && styles.controlButtonPressed,
+                  (runnerState !== 'running' && runnerState !== 'paused') && styles.buttonDisabled,
+                ]}
+                onPress={handlePauseResume}
+                disabled={runnerState !== 'running' && runnerState !== 'paused'}
+              >
+                <Text style={styles.buttonText}>
+                  {runnerState === 'paused' ? 'Resume' : 'Pause'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.controlButton,
+                  styles.stopButton,
+                  pressed && styles.controlButtonPressed,
+                  (runnerState !== 'running' && runnerState !== 'paused') && styles.buttonDisabled,
+                ]}
+                onPress={handleStop}
+                disabled={runnerState !== 'running' && runnerState !== 'paused'}
+              >
+                <Text style={styles.buttonText}>Stop</Text>
+              </Pressable>
+            </View>
+
+            {/* Live ScriptRunner Log Stream */}
+            {runnerLogs.length > 0 ? (
+              <View style={styles.logContainer}>
+                <Text style={styles.logHeader}>Live Runner Events ({runnerLogs.length}):</Text>
+                <ScrollView nestedScrollEnabled style={styles.logScrollView}>
+                  {runnerLogs.map((log, idx) => (
+                    <View key={idx} style={styles.logLine}>
+                      <Text style={styles.logTimestamp}>{log.timestamp.slice(11, 19)}</Text>
+                      <Text style={styles.logEvent}>[{log.event}]</Text>
+                      <Text style={styles.logMessage}>
+                        {log.label ? `${log.label} ` : ''}
+                        {log.details ? JSON.stringify(log.details) : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Standalone One-Shot Screenshot Test */}
           <View style={styles.actionSection}>
             <Pressable
               style={({ pressed }) => [
@@ -183,51 +316,19 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
               {isCapturing ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.buttonText}>Test MediaProjection Capture</Text>
+                <Text style={styles.buttonText}>Test One-Shot Capture</Text>
               )}
             </Pressable>
 
-            {statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
+            {captureStatus ? <Text style={styles.statusText}>{captureStatus}</Text> : null}
             {errorMessage ? <Text style={styles.errorText}>Error: {errorMessage}</Text> : null}
 
             {savedFilePath ? (
               <View style={styles.resultBox}>
-                <Text style={styles.resultLabel}>Saved Screenshot Path:</Text>
-                <Text style={styles.resultPath} numberOfLines={3} selectable>
+                <Text style={styles.resultLabel}>Last Captured PNG:</Text>
+                <Text style={styles.resultPath} numberOfLines={2} selectable>
                   {savedFilePath}
                 </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Accessibility Automation Test Section */}
-          <View style={styles.automationSection}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.automationButton,
-                pressed && styles.automationButtonPressed,
-                (!isAccessibilityEnabled || isAutomating) && styles.buttonDisabled,
-              ]}
-              onPress={handleTestAutomation}
-              disabled={!isAccessibilityEnabled || isAutomating}
-            >
-              {isAutomating ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  Test Settings Automation Flow (Settings → Network → Scroll x3 → Back)
-                </Text>
-              )}
-            </Pressable>
-
-            {automationLogs.length > 0 ? (
-              <View style={styles.logContainer}>
-                <Text style={styles.logTitle}>Automation Step Execution:</Text>
-                {automationLogs.map((log, index) => (
-                  <Text key={index} style={styles.logItem}>
-                    • {log}
-                  </Text>
-                ))}
               </View>
             ) : null}
           </View>
@@ -243,17 +344,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#090d16',
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
     alignItems: 'center',
   },
   card: {
     backgroundColor: '#0f172a',
     borderRadius: 16,
-    padding: 24,
+    padding: 20,
     borderWidth: 1,
     borderColor: '#1e293b',
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 440,
     alignItems: 'center',
   },
   badge: {
@@ -263,7 +364,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 6,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   badgeText: {
     color: '#38bdf8',
@@ -272,10 +373,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: '#f8fafc',
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: 'center',
   },
   subtitle: {
@@ -283,7 +384,7 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textAlign: 'center',
     lineHeight: 18,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   accessibilityCard: {
     width: '100%',
@@ -295,8 +396,8 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
+    paddingVertical: 10,
+    marginBottom: 14,
   },
   accessibilityInfo: {
     flexDirection: 'row',
@@ -324,7 +425,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statusBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
@@ -336,8 +437,8 @@ const styles = StyleSheet.create({
   },
   enableButton: {
     backgroundColor: '#0284c7',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 6,
   },
   enableButtonPressed: {
@@ -352,10 +453,10 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#1e293b50',
     borderRadius: 10,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#1e293b',
-    gap: 10,
+    gap: 8,
   },
   detailRow: {
     flexDirection: 'row',
@@ -363,98 +464,156 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#94a3b8',
   },
   detailValue: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#e2e8f0',
   },
+  runnerControlSection: {
+    width: '100%',
+    marginTop: 18,
+    backgroundColor: '#1e293b40',
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    gap: 10,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#38bdf8',
+  },
+  runnerStatusText: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  boldStatus: {
+    fontWeight: '700',
+    color: '#e2e8f0',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  runButton: {
+    flex: 2,
+    backgroundColor: '#0284c7',
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  runButtonPressed: {
+    backgroundColor: '#0369a1',
+  },
+  controlButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pauseButton: {
+    backgroundColor: '#d97706',
+  },
+  stopButton: {
+    backgroundColor: '#dc2626',
+  },
+  controlButtonPressed: {
+    opacity: 0.8,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  logContainer: {
+    backgroundColor: '#090d16',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    maxHeight: 180,
+  },
+  logHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    marginBottom: 6,
+  },
+  logScrollView: {
+    maxHeight: 140,
+  },
+  logLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginBottom: 3,
+  },
+  logTimestamp: {
+    fontSize: 10,
+    color: '#64748b',
+    fontFamily: 'monospace',
+  },
+  logEvent: {
+    fontSize: 10,
+    color: '#38bdf8',
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  logMessage: {
+    fontSize: 10,
+    color: '#cbd5e1',
+    fontFamily: 'monospace',
+    flexShrink: 1,
+  },
   actionSection: {
     width: '100%',
-    marginTop: 20,
-    gap: 10,
-  },
-  automationSection: {
-    width: '100%',
     marginTop: 16,
-    gap: 10,
+    gap: 8,
   },
   captureButton: {
-    backgroundColor: '#0284c7',
-    paddingVertical: 14,
+    backgroundColor: '#0f766e',
+    paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
   captureButtonPressed: {
-    backgroundColor: '#0369a1',
-  },
-  automationButton: {
-    backgroundColor: '#0f766e',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    paddingHorizontal: 10,
-  },
-  automationButtonPressed: {
     backgroundColor: '#115e59',
   },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
   statusText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#38bdf8',
     textAlign: 'center',
   },
   errorText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#ef4444',
     textAlign: 'center',
   },
   resultBox: {
     backgroundColor: '#1e293b',
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#334155',
-    gap: 4,
+    gap: 2,
   },
   resultLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#94a3b8',
   },
   resultPath: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#a7f3d0',
     fontFamily: 'monospace',
-  },
-  logContainer: {
-    backgroundColor: '#1e293b90',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-    gap: 4,
-  },
-  logTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#38bdf8',
-    marginBottom: 4,
-  },
-  logItem: {
-    fontSize: 12,
-    color: '#cbd5e1',
-    fontFamily: 'monospace',
-    lineHeight: 16,
   },
 });
