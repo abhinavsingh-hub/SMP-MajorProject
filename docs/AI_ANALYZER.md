@@ -6,7 +6,7 @@
 | **Package**            | `@smp/ai-analyzer` (`packages/ai-analyzer`)                                          |
 | **Domain / Unit**      | Anti-Cyber Terrorism Division, National Investigation Agency (NIA)                  |
 | **Role**               | AI Analysis, Multimodal Inspection & Panchnama Documentation Layer                    |
-| **Companion Specs**    | [DATA_CONTRACT.md](DATA_CONTRACT.md), [WORKER_PROTOCOL.md](WORKER_PROTOCOL.md)       |
+| **Companion Specs**    | [DATA_CONTRACT.md](DATA_CONTRACT.md), [WORKER_PROTOCOL.md](WORKER_PROTOCOL.md), [WALKTHROUGH.md](WALKTHROUGH.md) |
 
 ---
 
