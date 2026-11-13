@@ -12,3 +12,4 @@ export * from './entity-extractor.js';
 export * from './section-classifier.js';
 export * from './quality-checker.js';
 export * from './summary-provider.js';
+export * from './llm-summary-provider.js';
