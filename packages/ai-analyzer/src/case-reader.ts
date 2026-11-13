@@ -44,13 +44,15 @@ export class CaseReader {
     const hashesPath = path.join(this.caseFolder, 'hashes.csv');
     const auditLogPath = path.join(this.caseFolder, 'audit_log.jsonl');
 
-    const [caseJsonRaw, manifestRaw, hashesRaw, auditLogRaw] = await Promise.all([
-      fs.readFile(caseJsonPath, 'utf-8').catch((err) => {
-        throw new Error(`Missing or unreadable case.json at ${caseJsonPath}: ${(err as Error).message}`);
-      }),
-      fs.readFile(manifestPath, 'utf-8').catch((err) => {
-        throw new Error(`Missing or unreadable manifest.json at ${manifestPath}: ${(err as Error).message}`);
-      }),
+    const caseJsonRaw = await fs.readFile(caseJsonPath, 'utf-8').catch((err) => {
+      throw new Error(`Missing or unreadable case.json at ${caseJsonPath}: ${(err as Error).message}`);
+    });
+
+    const manifestRaw = await fs.readFile(manifestPath, 'utf-8').catch((err) => {
+      throw new Error(`Missing or unreadable manifest.json at ${manifestPath}: ${(err as Error).message}`);
+    });
+
+    const [hashesRaw, auditLogRaw] = await Promise.all([
       fs.readFile(hashesPath, 'utf-8').catch(() => null),
       fs.readFile(auditLogPath, 'utf-8').catch(() => null),
     ]);
