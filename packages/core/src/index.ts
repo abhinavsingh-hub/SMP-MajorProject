@@ -59,11 +59,16 @@ export { NodeFileSystem, nodeSha256 } from './fs/node-fs.ts';
 export {
   canonicalJson,
   hashAuditEvent,
+  appendAudit,
+  readAuditLog,
+  verifyAuditChain,
   ZERO_HASH,
 } from './case/audit.ts';
 export type {
   AuditEventInput,
   HashedAuditEvent,
+  AppendAuditInput,
+  AuditVerificationResult,
   Sha256Fn,
 } from './case/audit.ts';
 
