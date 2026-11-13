@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm --workspace=@smp/core test"
+    "test": "npm --workspace=@smp/core test && npm --workspace=@smp/desktop test"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
