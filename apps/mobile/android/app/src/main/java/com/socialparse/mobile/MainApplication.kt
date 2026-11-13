@@ -1,6 +1,7 @@
 package com.socialparse.mobile
 
 import android.app.Application
+import cl.json.ShareApplication
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -12,7 +13,9 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
 
-class MainApplication : Application(), ReactApplication {
+class MainApplication : Application(), ReactApplication, ShareApplication {
+
+  override fun getFileProviderAuthority(): String = "${BuildConfig.APPLICATION_ID}.provider"
 
   override val reactNativeHost: ReactNativeHost =
       object : DefaultReactNativeHost(this) {

@@ -188,7 +188,7 @@ describe('ScriptRunner', () => {
     expect(await runner.run([{ kind: 'capture', section: 'chat_1', source: 'whatsapp' }])).toBe(true);
 
     expect(blockedListener).toHaveBeenCalledWith('chat_1', path);
-    expect(onCapture).toHaveBeenCalledWith(path, 'chat_1', 'whatsapp');
+    expect(onCapture).toHaveBeenCalledWith(path, 'chat_1', 'whatsapp', expect.any(String));
     expect(runner.getBlockedCount()).toBe(1);
     expect(runner.getLog()).toEqual(
       expect.arrayContaining([

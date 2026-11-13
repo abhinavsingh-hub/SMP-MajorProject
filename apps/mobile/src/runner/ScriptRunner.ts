@@ -258,7 +258,9 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
         const counterStr = String(this.captureCounter).padStart(4, '0');
         this.captureCounter += 1;
 
-        const fileName = `${counterStr}_${step.section}.png`;
+        const capturedAt = new Date().toISOString();
+        const compactUtc = capturedAt.replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+        const fileName = `${this.config.platform}_${step.section}_${counterStr}_${compactUtc}.png`;
         const dir = `${this.config.caseDir}/${this.config.platform}/screenshots`;
         const filePath = `${dir}/${fileName}`;
 
@@ -290,7 +292,7 @@ export class ScriptRunner extends TypedEventEmitter<RunnerEvents> {
         }
 
         if (this.config.onCapture) {
-          await this.config.onCapture(savedPath, step.section, step.source);
+          await this.config.onCapture(savedPath, step.section, step.source, capturedAt);
         }
 
         return savedPath;

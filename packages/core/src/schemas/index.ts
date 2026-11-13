@@ -205,6 +205,7 @@ export const AuditEventTypeSchema = z.enum([
   'capture_warning',
   'capture_error',
   'capture_finished',
+  'case_exported',
   'integrity_check',
 ]);
 

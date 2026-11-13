@@ -3,6 +3,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "baseUrl": ".",
+    "allowImportingTsExtensions": true,
     "paths": {
       "@socialparse/core": ["../../packages/core/src/index.ts"],
       "@socialparse/core/*": ["../../packages/core/src/*"],

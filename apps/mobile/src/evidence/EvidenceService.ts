@@ -10,7 +10,7 @@ import {
   type EvidenceItem,
   type FileSystem,
   type Sha256Fn,
-} from '@socialparse/core';
+} from '@smp/core';
 import { RnFileSystem } from './RnFileSystem';
 import { rnSha256 } from './sha256';
 
@@ -86,10 +86,11 @@ export class EvidenceService {
         agency: params.agency ?? 'NIA ACTD',
         remarks: params.remarks ?? 'Mobile forensic collection',
         device: {
-          device_id: 'ANDROID_CAPTURE_DEVICE',
+          type: 'android',
+          name: 'Android Emulator / Handset',
           os: 'Android',
           os_version: String(Platform.Version),
-          model: 'Android Emulator / Handset',
+          app_version: '0.1.0',
         },
       },
       this.fs,
@@ -109,6 +110,7 @@ export class EvidenceService {
     savedFilePath: string,
     section: string,
     source?: string,
+    capturedAt?: string,
   ): Promise<EvidenceItem> {
     if (!this.caseFolderPath) {
       throw new Error('Case folder path is not set in EvidenceService');
@@ -116,6 +118,10 @@ export class EvidenceService {
 
     const fileName = savedFilePath.split('/').pop() || `${this.platform}_${Date.now()}.png`;
     const relFilePath = `${this.platform}/screenshots/${fileName}`;
+    const filePrefix = `${this.platform}_${section}_`;
+    const itemNumber = fileName.startsWith(filePrefix)
+      ? fileName.slice(filePrefix.length).split('_')[0]
+      : '';
 
     // 1. Record screenshot into manifest and hashes.csv
     const item = await recordScreenshot(
@@ -124,6 +130,8 @@ export class EvidenceService {
         platform: this.platform,
         section,
         filePath: relFilePath,
+        ...(capturedAt ? { capturedAt } : {}),
+        ...(/^\d{4,}$/.test(itemNumber) ? { itemId: `ITEM-${itemNumber}` } : {}),
       },
       this.fs,
       this.sha256,
@@ -139,6 +147,7 @@ export class EvidenceService {
           item_id: item.item_id,
           platform: this.platform,
           section,
+          file_path: item.file_path,
           sha256: item.sha256,
           source: source ?? 'screen_capture_module',
         },
