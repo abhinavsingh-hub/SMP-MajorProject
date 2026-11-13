@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@smp/core": ["../core/src/index.ts"],
+      "@smp/ai-analyzer": ["./src/index.ts"],
+      "@smp/ai-analyzer/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "tests", "vitest.config.ts"]
+}
+
