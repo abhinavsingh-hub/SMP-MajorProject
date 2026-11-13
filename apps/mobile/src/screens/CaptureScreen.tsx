@@ -16,10 +16,16 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
   const { platform, caseNumber, examinerName, accusedName } = route.params;
 
   const isAccessibilityEnabled = useAccessibilityStatus();
+
+  // Screen Capture States
   const [isCapturing, setIsCapturing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [savedFilePath, setSavedFilePath] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Automation Test States
+  const [isAutomating, setIsAutomating] = useState(false);
+  const [automationLogs, setAutomationLogs] = useState<string[]>([]);
 
   const handleTestCapture = async () => {
     try {
@@ -51,6 +57,48 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
       setErrorMessage(errStr);
+    }
+  };
+
+  const handleTestAutomation = async () => {
+    const logs: string[] = [];
+    const addLog = (msg: string) => {
+      logs.push(msg);
+      setAutomationLogs([...logs]);
+    };
+
+    try {
+      setIsAutomating(true);
+      setAutomationLogs([]);
+
+      // Step 1: Launch Settings app
+      addLog('Step 1: Launching com.android.settings...');
+      const launched = await Accessibility.launchApp('com.android.settings');
+      addLog(`Step 1 Result: ${launched ? 'Launched successfully' : 'Failed to launch'}`);
+
+      // Step 2: Wait for 'Network'
+      addLog("Step 2: Waiting for text 'Network' (timeout 5s)...");
+      const foundText = await Accessibility.waitForText('Network', 5000);
+      addLog(`Step 2 Result: Text 'Network' ${foundText ? 'found' : 'not found'}`);
+
+      // Step 3: Scroll forward 3 times
+      for (let i = 1; i <= 3; i++) {
+        addLog(`Step 3.${i}: Scrolling forward (${i}/3)...`);
+        const scrolled = await Accessibility.scrollForward();
+        addLog(`Step 3.${i} Result: ${scrolled ? 'Scrolled' : 'Reached end / Not scrollable'}`);
+      }
+
+      // Step 4: Perform Back
+      addLog('Step 4: Performing global BACK action...');
+      const backed = await Accessibility.performBack();
+      addLog(`Step 4 Result: ${backed ? 'Back executed' : 'Back failed'}`);
+
+      addLog('Automation sequence completed.');
+    } catch (err: unknown) {
+      const errStr = err instanceof Error ? err.message : String(err);
+      addLog(`Automation Error: ${errStr}`);
+    } finally {
+      setIsAutomating(false);
     }
   };
 
@@ -121,12 +169,13 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
             </View>
           </View>
 
+          {/* Screenshot Test Section */}
           <View style={styles.actionSection}>
             <Pressable
               style={({ pressed }) => [
                 styles.captureButton,
                 pressed && styles.captureButtonPressed,
-                isCapturing && styles.captureButtonDisabled,
+                isCapturing && styles.buttonDisabled,
               ]}
               onPress={handleTestCapture}
               disabled={isCapturing}
@@ -134,7 +183,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
               {isCapturing ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.captureButtonText}>Test MediaProjection Capture</Text>
+                <Text style={styles.buttonText}>Test MediaProjection Capture</Text>
               )}
             </Pressable>
 
@@ -147,6 +196,38 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
                 <Text style={styles.resultPath} numberOfLines={3} selectable>
                   {savedFilePath}
                 </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Accessibility Automation Test Section */}
+          <View style={styles.automationSection}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.automationButton,
+                pressed && styles.automationButtonPressed,
+                (!isAccessibilityEnabled || isAutomating) && styles.buttonDisabled,
+              ]}
+              onPress={handleTestAutomation}
+              disabled={!isAccessibilityEnabled || isAutomating}
+            >
+              {isAutomating ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text style={styles.buttonText}>
+                  Test Settings Automation Flow (Settings → Network → Scroll x3 → Back)
+                </Text>
+              )}
+            </Pressable>
+
+            {automationLogs.length > 0 ? (
+              <View style={styles.logContainer}>
+                <Text style={styles.logTitle}>Automation Step Execution:</Text>
+                {automationLogs.map((log, index) => (
+                  <Text key={index} style={styles.logItem}>
+                    • {log}
+                  </Text>
+                ))}
               </View>
             ) : null}
           </View>
@@ -293,7 +374,12 @@ const styles = StyleSheet.create({
   actionSection: {
     width: '100%',
     marginTop: 20,
-    gap: 12,
+    gap: 10,
+  },
+  automationSection: {
+    width: '100%',
+    marginTop: 16,
+    gap: 10,
   },
   captureButton: {
     backgroundColor: '#0284c7',
@@ -304,13 +390,24 @@ const styles = StyleSheet.create({
   captureButtonPressed: {
     backgroundColor: '#0369a1',
   },
-  captureButtonDisabled: {
-    opacity: 0.6,
+  automationButton: {
+    backgroundColor: '#0f766e',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    paddingHorizontal: 10,
   },
-  captureButtonText: {
+  automationButtonPressed: {
+    backgroundColor: '#115e59',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  buttonText: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
+    textAlign: 'center',
   },
   statusText: {
     fontSize: 13,
@@ -339,5 +436,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#a7f3d0',
     fontFamily: 'monospace',
+  },
+  logContainer: {
+    backgroundColor: '#1e293b90',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: 4,
+  },
+  logTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#38bdf8',
+    marginBottom: 4,
+  },
+  logItem: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    fontFamily: 'monospace',
+    lineHeight: 16,
   },
 });

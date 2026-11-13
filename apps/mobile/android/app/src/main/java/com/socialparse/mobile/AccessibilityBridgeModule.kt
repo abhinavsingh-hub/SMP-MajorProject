@@ -9,9 +9,13 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.util.concurrent.Executors
 
 class AccessibilityBridgeModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
+
+  private val executor = Executors.newSingleThreadExecutor()
+  private val actions = AutomationActions(reactContext)
 
   init {
     CaptureAccessibilityService.onStatusChangeListener = { isEnabled ->
@@ -43,6 +47,102 @@ class AccessibilityBridgeModule(private val reactContext: ReactApplicationContex
       promise.resolve(true)
     } catch (e: Exception) {
       promise.reject("SETTINGS_ERROR", "Failed to open accessibility settings: ${e.message}", e)
+    }
+  }
+
+  @ReactMethod
+  fun clickByText(text: String, exact: Boolean, promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.clickByText(text, exact)
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("CLICK_TEXT_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun clickByViewId(id: String, promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.clickByViewId(id)
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("CLICK_VIEW_ID_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun waitForText(text: String, timeoutMs: Double, promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.waitForText(text, timeoutMs.toLong())
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("WAIT_TEXT_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun scrollForward(promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.scrollForward()
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("SCROLL_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun performBack(promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.performBack()
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("GLOBAL_BACK_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun performHome(promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.performHome()
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("GLOBAL_HOME_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getForegroundPackage(promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.getForegroundPackage()
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("FOREGROUND_PKG_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun launchApp(packageName: String, promise: Promise) {
+    executor.execute {
+      try {
+        val result = actions.launchApp(packageName)
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("LAUNCH_APP_ERROR", e.message, e)
+      }
     }
   }
 
