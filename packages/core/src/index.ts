@@ -70,3 +70,9 @@ export type {
 // Case folder builder
 export { createCaseFolder } from './case/create.ts';
 export type { CreateCaseInput, CreateCaseResult } from './case/create.ts';
+
+// ---------------------------------------------------------------------------
+// P3-05: Evidence recorder & hashing
+// ---------------------------------------------------------------------------
+export { recordScreenshot, compactUtcTimestamp } from './case/record.ts';
+export type { RecordScreenshotInput } from './case/record.ts';

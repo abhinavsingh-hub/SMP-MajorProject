@@ -33,10 +33,10 @@ export interface HashedAuditEvent extends AuditEventInput {
 }
 
 /**
- * A function that returns the SHA-256 hex digest of a UTF-8 string.
+ * A function that returns the SHA-256 hex digest of a UTF-8 string or raw bytes.
  * Implementations can use Node.js `crypto`, Web Crypto, or React Native libs.
  */
-export type Sha256Fn = (data: string) => Promise<string>;
+export type Sha256Fn = (data: string | Uint8Array) => Promise<string>;
 
 // ---------------------------------------------------------------------------
 // Canonical JSON
