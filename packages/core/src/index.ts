@@ -92,7 +92,7 @@ export type {
 } from './case/verify.ts';
 
 // ---------------------------------------------------------------------------
-// P3-08: HTML Report Template
+// P3-08 & P3-09: HTML Report Template, QR Code & Certification
 // ---------------------------------------------------------------------------
 export {
   renderReportHtml,
@@ -103,3 +103,5 @@ export {
   SAMPLE_PNG_BASE64,
 } from './report/html.ts';
 export type { BuildReportOptions } from './report/html.ts';
+export { generateQrSvg, generateQrMatrix } from './report/qrcode.ts';
+export type { QrSvgOptions } from './report/qrcode.ts';
