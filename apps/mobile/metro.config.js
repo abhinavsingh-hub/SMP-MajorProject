@@ -10,6 +10,7 @@ const corePackageRoot = path.resolve(monorepoRoot, 'packages/core');
  * 1. watchFolders: monorepo root and packages/core
  * 2. resolver.nodeModulesPaths: mobile node_modules and root node_modules
  * 3. extraNodeModules: ensures single copy of react & react-native and resolves @socialparse/core
+ * 4. resolveRequest: stubs out Node.js built-ins (node:fs/promises, node:path, node:crypto)
  *
  * @type {import('@react-native/metro-config').MetroConfig}
  */
@@ -31,6 +32,18 @@ const config = {
       new RegExp(`^${path.resolve(projectRoot, 'node_modules/react')}/.*`),
       new RegExp(`^${path.resolve(projectRoot, 'node_modules/react-native')}/.*`),
     ],
+    resolveRequest: (context, moduleName, platform) => {
+      // Stub Node-only modules imported conditionally by @socialparse/core/node-fs
+      if (
+        moduleName.startsWith('node:') ||
+        ['fs', 'path', 'crypto', 'node:fs/promises', 'node:path', 'node:crypto'].includes(moduleName)
+      ) {
+        return {
+          type: 'empty',
+        };
+      }
+      return context.resolveRequest(context, moduleName, platform);
+    },
   },
 };
 

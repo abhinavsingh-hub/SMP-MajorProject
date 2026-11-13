@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,17 +8,23 @@ import {
   Text,
   View,
 } from 'react-native';
+import type { CaseVerificationResult } from '@socialparse/core';
 import type { CaptureScreenProps } from '../navigation/types';
 import { ScreenCapture } from '../native/ScreenCapture';
 import { Accessibility, useAccessibilityStatus } from '../native/Accessibility';
 import { ScriptRunner } from '../runner/ScriptRunner';
 import { demoScript } from '../runner/demoScript';
 import type { LogEntry } from '../runner/types';
+import { EvidenceService } from '../evidence/EvidenceService';
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
-  const { platform, caseNumber, examinerName, accusedName } = route.params;
+  const { platform, caseNumber, examinerName, accusedName, caseDir } = route.params;
 
   const isAccessibilityEnabled = useAccessibilityStatus();
+  const evidenceService = useMemo(
+    () => new EvidenceService(caseDir, platform),
+    [caseDir, platform],
+  );
 
   // Screen Capture States
   const [isCapturing, setIsCapturing] = useState(false);
@@ -34,6 +40,10 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
   const [runnerLogs, setRunnerLogs] = useState<LogEntry[]>([]);
   const runnerRef = useRef<ScriptRunner | null>(null);
 
+  // Verification State
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<CaseVerificationResult | null>(null);
+
   const handleTestCapture = async () => {
     try {
       setIsCapturing(true);
@@ -43,12 +53,15 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
       await ScreenCapture.requestPermission();
 
       setCaptureStatus('Capturing screen frame via ImageReader...');
-      const filesDir = await ScreenCapture.getFilesDir();
-      const targetPath = `${filesDir}/evidence_${Date.now()}.png`;
+      const targetPath = `${caseDir}/${platform}/screenshots/manual_${Date.now()}.png`;
 
       const resultPath = await ScreenCapture.captureScreenshot(targetPath);
       setSavedFilePath(resultPath);
-      setCaptureStatus('Screenshot captured and saved to files directory.');
+
+      // Record to core manifest, hashes.csv and audit_log
+      await evidenceService.onCapture(resultPath, 'manual_screen', 'examiner_button');
+
+      setCaptureStatus('Screenshot captured, hashed, and recorded in manifest.json & hashes.csv');
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
       setErrorMessage(errStr);
@@ -74,12 +87,12 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
       setProgressInfo({ current: 0, total: demoScript.length });
       setRunnerState('running');
 
-      const filesDir = (await ScreenCapture.getFilesDir()) || '/data/user/0/com.socialparse.mobile/files';
-      const caseDir = `${filesDir}/${caseNumber}`;
-
       const runner = new ScriptRunner({
         caseDir,
         platform,
+        onCapture: async (path, section, source) => {
+          await evidenceService.onCapture(path, section, source);
+        },
       });
       runnerRef.current = runner;
 
@@ -96,7 +109,8 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
         setRunnerLogs([...runner.getLog()]);
       });
 
-      runner.on('stepFailed', () => {
+      runner.on('stepFailed', (step, _idx, err) => {
+        evidenceService.recordStepFailed(step.label ?? step.kind, err.message);
         setRunnerLogs([...runner.getLog()]);
       });
 
@@ -106,6 +120,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
       });
 
       runner.on('paused', () => {
+        evidenceService.recordPaused();
         setRunnerState('paused');
         setRunnerLogs([...runner.getLog()]);
       });
@@ -116,16 +131,19 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
       });
 
       runner.on('stopped', () => {
+        evidenceService.recordStopped();
         setRunnerState('stopped');
         setRunnerLogs([...runner.getLog()]);
       });
 
       runner.on('done', () => {
+        evidenceService.recordDone();
         setRunnerState('done');
         setRunnerLogs([...runner.getLog()]);
       });
 
       runner.on('error', (err) => {
+        evidenceService.recordStepFailed('runner_error', err.message);
         setRunnerState('error');
         setErrorMessage(err.message);
         setRunnerLogs([...runner.getLog()]);
@@ -153,6 +171,20 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
     runnerRef.current.stop();
   };
 
+  const handleVerifyCase = async () => {
+    try {
+      setIsVerifying(true);
+      setErrorMessage('');
+      const res = await evidenceService.verifyCaseIntegrity();
+      setVerificationResult(res);
+    } catch (err: unknown) {
+      const errStr = err instanceof Error ? err.message : String(err);
+      setErrorMessage(`Verification failed: ${errStr}`);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -163,7 +195,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
 
           <Text style={styles.title}>Forensic Capture Session</Text>
           <Text style={styles.subtitle}>
-            Active case context initialized for evidentiary preservation.
+            Active case directory linked to Core Evidence Recorder.
           </Text>
 
           {/* Accessibility Service Status */}
@@ -206,6 +238,12 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Case Reference:</Text>
               <Text style={styles.detailValue}>{caseNumber}</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Case Folder:</Text>
+              <Text style={[styles.detailValue, styles.pathText]} numberOfLines={1} ellipsizeMode="middle">
+                {caseDir}
+              </Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Target Platform:</Text>
@@ -298,6 +336,58 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ route }) => {
                     </View>
                   ))}
                 </ScrollView>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Case Integrity Verification Section */}
+          <View style={styles.verificationSection}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.verifyButton,
+                pressed && styles.verifyButtonPressed,
+                isVerifying && styles.buttonDisabled,
+              ]}
+              onPress={handleVerifyCase}
+              disabled={isVerifying}
+            >
+              {isVerifying ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text style={styles.buttonText}>Verify Case (core.verifyCase)</Text>
+              )}
+            </Pressable>
+
+            {verificationResult ? (
+              <View
+                style={[
+                  styles.verifyResultBox,
+                  verificationResult.passed
+                    ? styles.verifyBoxPassed
+                    : styles.verifyBoxFailed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.verifyTitle,
+                    verificationResult.passed
+                      ? styles.verifyTextPassed
+                      : styles.verifyTextFailed,
+                  ]}
+                >
+                  {verificationResult.passed
+                    ? `Verification OK: ${verificationResult.itemsChecked} items verified, audit chain intact`
+                    : `Verification FAILED: ${verificationResult.issues.length} issue(s) detected`}
+                </Text>
+                {!verificationResult.passed && verificationResult.issues.length > 0 ? (
+                  <View style={styles.issuesList}>
+                    {verificationResult.issues.map((issue, idx) => (
+                      <Text key={idx} style={styles.issueText}>
+                        • {issue}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -472,6 +562,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#e2e8f0',
   },
+  pathText: {
+    fontSize: 11,
+    fontFamily: 'monospace',
+    color: '#38bdf8',
+    maxWidth: 200,
+  },
   runnerControlSection: {
     width: '100%',
     marginTop: 18,
@@ -574,9 +670,56 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     flexShrink: 1,
   },
+  verificationSection: {
+    width: '100%',
+    marginTop: 14,
+    gap: 8,
+  },
+  verifyButton: {
+    backgroundColor: '#475569',
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  verifyButtonPressed: {
+    backgroundColor: '#334155',
+  },
+  verifyResultBox: {
+    padding: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    gap: 4,
+  },
+  verifyBoxPassed: {
+    backgroundColor: '#05966915',
+    borderColor: '#10b981',
+  },
+  verifyBoxFailed: {
+    backgroundColor: '#dc262615',
+    borderColor: '#ef4444',
+  },
+  verifyTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  verifyTextPassed: {
+    color: '#34d399',
+  },
+  verifyTextFailed: {
+    color: '#f87171',
+  },
+  issuesList: {
+    marginTop: 4,
+    gap: 2,
+  },
+  issueText: {
+    fontSize: 11,
+    color: '#fca5a5',
+    fontFamily: 'monospace',
+  },
   actionSection: {
     width: '100%',
-    marginTop: 16,
+    marginTop: 14,
     gap: 8,
   },
   captureButton: {

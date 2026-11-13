@@ -16,6 +16,7 @@
     "@smp/core": "*",
     "react": "^18.2.0",
     "react-native": "0.76.9",
+    "react-native-fs": "^2.20.0",
     "react-native-safe-area-context": "^5.2.0",
     "react-native-screens": "^4.6.0"
   },

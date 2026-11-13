@@ -10,6 +10,7 @@ export type RootStackParamList = {
     caseNumber: string;
     examinerName: string;
     accusedName: string;
+    caseDir: string;
   };
 };
 

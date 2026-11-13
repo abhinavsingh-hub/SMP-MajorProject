@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import type { CaseInfoScreenProps } from '../navigation/types';
+import { EvidenceService } from '../evidence/EvidenceService';
 
 export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigation }) => {
   const { platform } = route.params;
@@ -18,6 +20,7 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
   const [caseNumber, setCaseNumber] = useState('');
   const [examinerName, setExaminerName] = useState('');
   const [accusedName, setAccusedName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const validate = (): boolean => {
@@ -37,17 +40,37 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!validate()) {
       return;
     }
 
-    navigation.navigate('Capture', {
-      platform,
-      caseNumber: caseNumber.trim(),
-      examinerName: examinerName.trim(),
-      accusedName: accusedName.trim(),
-    });
+    try {
+      setIsSubmitting(true);
+      const evidenceService = new EvidenceService();
+
+      const created = await evidenceService.createCase({
+        caseNumber: caseNumber.trim(),
+        examinerName: examinerName.trim(),
+        accusedName: accusedName.trim(),
+        platform,
+      });
+
+      await evidenceService.recordCaptureStart(platform);
+
+      navigation.navigate('Capture', {
+        platform,
+        caseNumber: caseNumber.trim(),
+        examinerName: examinerName.trim(),
+        accusedName: accusedName.trim(),
+        caseDir: created.caseFolderPath,
+      });
+    } catch (err: unknown) {
+      const errStr = err instanceof Error ? err.message : String(err);
+      setErrors((prev) => ({ ...prev, general: errStr }));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -62,6 +85,8 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
             <Text style={styles.targetBadge}>{platform}</Text>
           </View>
 
+          {errors.general ? <Text style={styles.generalError}>{errors.general}</Text> : null}
+
           <View style={styles.formGroup}>
             <Text style={styles.label}>Case / FIR Number *</Text>
             <TextInput
@@ -74,6 +99,7 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
                 if (errors.caseNumber) setErrors((prev) => ({ ...prev, caseNumber: '' }));
               }}
               autoCapitalize="characters"
+              editable={!isSubmitting}
             />
             {errors.caseNumber ? <Text style={styles.errorText}>{errors.caseNumber}</Text> : null}
           </View>
@@ -89,6 +115,7 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
                 setExaminerName(val);
                 if (errors.examinerName) setErrors((prev) => ({ ...prev, examinerName: '' }));
               }}
+              editable={!isSubmitting}
             />
             {errors.examinerName ? (
               <Text style={styles.errorText}>{errors.examinerName}</Text>
@@ -106,15 +133,25 @@ export const CaseInfoScreen: React.FC<CaseInfoScreenProps> = ({ route, navigatio
                 setAccusedName(val);
                 if (errors.accusedName) setErrors((prev) => ({ ...prev, accusedName: '' }));
               }}
+              editable={!isSubmitting}
             />
             {errors.accusedName ? <Text style={styles.errorText}>{errors.accusedName}</Text> : null}
           </View>
 
           <Pressable
-            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            style={({ pressed }) => [
+              styles.button,
+              pressed && styles.buttonPressed,
+              isSubmitting && styles.buttonDisabled,
+            ]}
             onPress={handleStart}
+            disabled={isSubmitting}
           >
-            <Text style={styles.buttonText}>Start Capture Session</Text>
+            {isSubmitting ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={styles.buttonText}>Initialize Case & Start Session</Text>
+            )}
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -182,6 +219,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ef4444',
   },
+  generalError: {
+    fontSize: 13,
+    color: '#ef4444',
+    backgroundColor: '#ef444415',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ef444450',
+  },
   button: {
     backgroundColor: '#0284c7',
     paddingVertical: 14,
@@ -191,6 +237,9 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     backgroundColor: '#0369a1',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     color: '#ffffff',
