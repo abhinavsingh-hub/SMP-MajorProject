@@ -21,7 +21,7 @@ export const App: React.FC = () => {
         <Sidebar currentScreen={navState.currentScreen} onNavigate={handleNavigate} />
         <View style={styles.mainContent}>
           {navState.currentScreen === 'home' && <HomeScreen onNavigate={handleNavigate} />}
-          {navState.currentScreen === 'new_case' && <NewCaseScreen />}
+          {navState.currentScreen === 'new_case' && <NewCaseScreen onNavigate={handleNavigate} />}
           {navState.currentScreen === 'capture' && <CaptureScreen />}
           {navState.currentScreen === 'report' && <ReportScreen />}
         </View>
@@ -33,7 +33,7 @@ export const App: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#090d16',
+    backgroundColor: '#F8F8F6',
   },
   container: {
     flex: 1,
@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#F8F8F6',
   },
 });
 
