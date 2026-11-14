@@ -128,7 +128,7 @@ export const NewCaseScreen: React.FC<NewCaseScreenProps> = ({
               placeholder="e.g. FIR-102/2026 or CR-84/2026"
               placeholderTextColor="#64748b"
               value={form.caseNumber}
-              onChangeText={(val) => updateField('caseNumber', val)}
+              onChangeText={(val: string) => updateField('caseNumber', val)}
               testID="input-case-number"
             />
             {errors.case_number ? (
@@ -145,7 +145,7 @@ export const NewCaseScreen: React.FC<NewCaseScreenProps> = ({
                 placeholder="e.g. Insp. Rajesh Sharma"
                 placeholderTextColor="#64748b"
                 value={form.examinerName}
-                onChangeText={(val) => updateField('examinerName', val)}
+                onChangeText={(val: string) => updateField('examinerName', val)}
                 testID="input-examiner-name"
               />
               {errors.examiner_name ? (
@@ -163,7 +163,7 @@ export const NewCaseScreen: React.FC<NewCaseScreenProps> = ({
                 placeholder="e.g. Forensic Analyst"
                 placeholderTextColor="#64748b"
                 value={form.examinerDesignation}
-                onChangeText={(val) => updateField('examinerDesignation', val)}
+                onChangeText={(val: string) => updateField('examinerDesignation', val)}
                 testID="input-examiner-designation"
               />
               {errors.examiner_designation ? (
@@ -181,7 +181,7 @@ export const NewCaseScreen: React.FC<NewCaseScreenProps> = ({
                 placeholder="e.g. Suresh Patel (or Unknown)"
                 placeholderTextColor="#64748b"
                 value={form.accusedName}
-                onChangeText={(val) => updateField('accusedName', val)}
+                onChangeText={(val: string) => updateField('accusedName', val)}
                 testID="input-accused-name"
               />
             </View>
@@ -193,7 +193,7 @@ export const NewCaseScreen: React.FC<NewCaseScreenProps> = ({
                 placeholder="e.g. Cyber Cell, Special Branch"
                 placeholderTextColor="#64748b"
                 value={form.agency}
-                onChangeText={(val) => updateField('agency', val)}
+                onChangeText={(val: string) => updateField('agency', val)}
                 testID="input-agency"
               />
               {errors.agency ? (
@@ -252,7 +252,7 @@ export const NewCaseScreen: React.FC<NewCaseScreenProps> = ({
                 placeholder="e.g. Lab Machine #04"
                 placeholderTextColor="#64748b"
                 value={form.deviceName}
-                onChangeText={(val) => updateField('deviceName', val)}
+                onChangeText={(val: string) => updateField('deviceName', val)}
                 testID="input-device-name"
               />
               {errors['device.name'] ? (
@@ -284,7 +284,7 @@ export const NewCaseScreen: React.FC<NewCaseScreenProps> = ({
               placeholder="e.g. Evidence seized for Section 65B certification..."
               placeholderTextColor="#64748b"
               value={form.remarks}
-              onChangeText={(val) => updateField('remarks', val)}
+              onChangeText={(val: string) => updateField('remarks', val)}
               testID="input-remarks"
             />
           </View>
