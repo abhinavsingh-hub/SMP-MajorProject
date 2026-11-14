@@ -47,7 +47,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
-  const [currentStatus, setCurrentStatus] = useState<string>('Ready to start');
+  const [currentStatus, setCurrentStatus] = useState<string>('Ready to start capture');
   const [activePlatform, setActivePlatform] = useState<string | null>(null);
   const [userAlert, setUserAlert] = useState<{ message: string; timeout: number } | null>(null);
   const [capturedItems, setCapturedItems] = useState<ItemPayload[]>([]);
@@ -100,7 +100,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
           setCapturedItems((prev) => [...prev, msg.payload]);
           addLog(
             'ITEM',
-            `Captured ${msg.payload.item_id} (${msg.payload.platform}/${msg.payload.section}) - ${msg.payload.sha256.slice(0, 16)}...`,
+            `Hashed ${msg.payload.item_id}: ${msg.payload.sha256.substring(0, 16)}... (${msg.payload.platform}/${msg.payload.section})`,
             'success',
           );
           break;
@@ -111,33 +111,26 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
             message: msg.payload.message,
             timeout: msg.payload.timeout_seconds,
           });
-          addLog(
-            'NEEDS_USER',
-            `[Action Required]: ${msg.payload.message} (${msg.payload.timeout_seconds}s)`,
-            'warn',
-          );
-          break;
-        }
-
-        case 'error': {
-          addLog(
-            'ERROR',
-            `[${msg.payload.code}] ${msg.payload.message} (${msg.payload.platform || 'General'})`,
-            'error',
-          );
+          addLog('NEEDS_USER', `Manual Intervention: ${msg.payload.message}`, 'warn');
           break;
         }
 
         case 'done': {
           setIsCapturing(false);
           setProgressPercent(100);
-          setUserAlert(null);
-          setCurrentStatus(`Finished: ${msg.payload.status}`);
+          setCurrentStatus('Capture Completed • Manifest and Hash Chain Sealed');
           addLog(
             'DONE',
-            `Session complete: ${msg.payload.status}. ${msg.payload.summary.items_captured} items captured.`,
+            `Capture finished: ${msg.payload.summary.items_captured} items captured across ${msg.payload.summary.platforms.join(', ')}`,
             'success',
           );
+          break;
+        }
+
+        case 'error': {
+          setIsCapturing(false);
+          setCurrentStatus(`Error: ${msg.payload.message}`);
+          addLog('ERROR', `${msg.payload.code}: ${msg.payload.message}`, 'error');
           break;
         }
       }
@@ -145,17 +138,16 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
 
     return () => {
       unsubscribe();
-      workerClient.disconnect();
     };
   }, [workerClient]);
 
   const handleStartCapture = async () => {
-    const chosenPlatforms = (Object.keys(selectedPlatforms) as PlatformId[]).filter(
-      (k) => selectedPlatforms[k],
+    const platformsToRun = (Object.keys(selectedPlatforms) as PlatformId[]).filter(
+      (p) => selectedPlatforms[p],
     );
 
-    if (chosenPlatforms.length === 0) {
-      addLog('WARN', 'Select at least one social media platform to capture.', 'warn');
+    if (platformsToRun.length === 0) {
+      addLog('WARN', 'Select at least one social media platform to capture', 'warn');
       return;
     }
 
@@ -164,18 +156,18 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
     setCapturedItems([]);
     setLogs([]);
     setUserAlert(null);
-    addLog('START', `Initiating capture session for ${chosenPlatforms.join(', ')}...`);
+    addLog('INIT', `Starting capture session for Case ${caseId}`, 'info');
 
     try {
       await workerClient.startCapture({
         case_id: caseId,
         case_folder: caseFolder,
-        next_item_number: 1,
-        platforms: chosenPlatforms,
+        next_item_number: capturedItems.length + 1,
+        platforms: platformsToRun,
         config: {
           sections: ['profile', 'feed'],
-          max_items_per_section: 10,
-          user_action_timeout_seconds: 300,
+          max_items_per_section: 5,
+          user_action_timeout_seconds: 60,
         },
       });
     } catch (err: unknown) {
@@ -185,154 +177,194 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
     }
   };
 
-  const platformsList: { id: PlatformId; label: string }[] = [
+  const platforms: { id: PlatformId; label: string }[] = [
     { id: 'facebook', label: 'Facebook' },
     { id: 'instagram', label: 'Instagram' },
     { id: 'twitter', label: 'Twitter / X' },
-    { id: 'google', label: 'Google' },
+    { id: 'google', label: 'Google Takeout' },
   ];
 
+  const selectedCount = Object.values(selectedPlatforms).filter(Boolean).length;
+
   return (
-    <View style={styles.container} testID="screen-capture">
+    <ScrollView style={styles.container} testID="screen-capture">
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Automated Evidence Capture</Text>
+        <View style={styles.breadcrumb}>
+          <Text style={styles.breadcrumbItem}>FORENSIC WORKSPACE</Text>
+          <Text style={styles.breadcrumbDivider}>/</Text>
+          <Text style={styles.breadcrumbActive}>EVIDENCE CAPTURE</Text>
+        </View>
+        <Text style={styles.title}>Automated Feed Capture Session</Text>
         <Text style={styles.subtitle}>
-          Select target feeds to harvest. Streams live worker protocol events and verifies hashes.
+          Active Case: <Text style={styles.subtitleBold}>{caseId}</Text> • Storage: {caseFolder}
         </Text>
       </View>
 
-      {/* Platform Checkboxes Card */}
+      {/* Target Platforms Card */}
       <View style={styles.card}>
-        <Text style={styles.cardHeader}>Target Platforms</Text>
-        <View style={styles.platformRow}>
-          {platformsList.map((p) => {
-            const isChecked = selectedPlatforms[p.id];
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>1. Target Platforms Scope</Text>
+          <Text style={styles.cardBadge}>{selectedCount} selected</Text>
+        </View>
+        <Text style={styles.cardDescription}>
+          Select social media platforms to extract feeds, profiles, and media pursuant to warrant parameters.
+        </Text>
+
+        <View style={styles.platformsRow}>
+          {platforms.map((p) => {
+            const isSelected = selectedPlatforms[p.id];
             return (
               <TouchableOpacity
                 key={p.id}
-                style={[styles.checkboxContainer, isChecked && styles.checkboxActive]}
+                style={[
+                  styles.platformButton,
+                  isSelected && styles.platformButtonSelected,
+                  isCapturing && styles.disabledOption,
+                ]}
                 onPress={() => togglePlatform(p.id)}
                 disabled={isCapturing}
                 testID={`checkbox-${p.id}`}
               >
-                <View style={[styles.checkbox, isChecked && styles.checkedBox]}>
-                  {isChecked && <Text style={styles.checkmark}>✓</Text>}
+                <View style={[styles.checkboxIndicator, isSelected && styles.checkboxIndicatorActive]}>
+                  {isSelected && <Text style={styles.checkboxCheck}>✓</Text>}
                 </View>
-                <Text style={[styles.platformLabel, isChecked && styles.platformLabelActive]}>
+                <Text style={[styles.platformButtonText, isSelected && styles.platformButtonTextSelected]}>
                   {p.label}
                 </Text>
               </TouchableOpacity>
             );
           })}
         </View>
+      </View>
 
-        <View style={styles.actionRow}>
+      {/* Execution Control Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>2. Capture Execution & Progress</Text>
+          <Text style={styles.statusLabel}>{currentStatus}</Text>
+        </View>
+
+        {/* Progress Bar */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBarBackground}>
+            <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
+          </View>
+          <View style={styles.progressTextRow}>
+            <Text style={styles.progressPercentage}>{progressPercent}% completed</Text>
+            {activePlatform && <Text style={styles.activePlatformLabel}>Active: {activePlatform}</Text>}
+          </View>
+        </View>
+
+        <View style={styles.controlRow}>
           <TouchableOpacity
-            style={[styles.startButton, isCapturing && styles.startButtonDisabled]}
+            style={[
+              styles.startCaptureButton,
+              isCapturing ? styles.startCaptureButtonDisabled : null,
+            ]}
             onPress={handleStartCapture}
             disabled={isCapturing}
             testID="btn-start-capture"
           >
             {isCapturing ? (
-              <ActivityIndicator color="#0f172a" />
+              <View style={styles.buttonLoadingRow}>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text style={styles.startCaptureButtonText}>Capturing Feeds...</Text>
+              </View>
             ) : (
-              <Text style={styles.startButtonText}>Start Capture Session</Text>
+              <Text style={styles.startCaptureButtonText}>Start Capture Session</Text>
             )}
           </TouchableOpacity>
-          <View style={styles.caseBadge}>
-            <Text style={styles.caseBadgeText}>Active Case: {caseId}</Text>
+        </View>
+      </View>
+
+      {/* User Intervention Alert Box */}
+      {userAlert && (
+        <View style={styles.alertBox} testID="user-action-alert">
+          <View style={styles.alertIconBadge}>
+            <Text style={styles.alertIcon}>!</Text>
+          </View>
+          <View style={styles.alertTextGroup}>
+            <Text style={styles.alertTitle}>Examiner Action Required</Text>
+            <Text style={styles.alertMessage}>{userAlert.message}</Text>
+            <Text style={styles.alertTimeout}>
+              Session pause timeout: {userAlert.timeout} seconds remaining
+            </Text>
           </View>
         </View>
-      </View>
+      )}
 
-      {/* Needs User Alert Box */}
-      {userAlert ? (
-        <View style={styles.alertBox} testID="user-action-alert">
-          <Text style={styles.alertTitle}>⚠️ User Action Required</Text>
-          <Text style={styles.alertBody}>{userAlert.message}</Text>
-          <Text style={styles.alertFooter}>
-            Please interact directly with the browser window opened by the capture worker.
-          </Text>
-        </View>
-      ) : null}
-
-      {/* Progress Card */}
+      {/* Captured Evidence Items Register */}
       <View style={styles.card}>
-        <View style={styles.progressHeader}>
-          <Text style={styles.progressLabel}>Overall Progress: {progressPercent}%</Text>
-          <Text style={styles.statusLabel}>
-            {activePlatform ? `[${activePlatform.toUpperCase()}] ` : ''}
-            {currentStatus}
-          </Text>
-        </View>
-        <View style={styles.progressBarTrack}>
-          <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
-        </View>
-      </View>
-
-      {/* Live Captured Items & Protocol Event Logs */}
-      <View style={styles.bottomGrid}>
-        {/* Items List */}
-        <View style={[styles.card, styles.gridCol]}>
-          <Text style={styles.cardHeader}>Captured Screenshots ({capturedItems.length})</Text>
-          <ScrollView style={styles.itemListScroll}>
-            {capturedItems.length === 0 ? (
-              <Text style={styles.emptyText}>No items captured yet in this session.</Text>
-            ) : (
-              capturedItems.map((item) => (
-                <View key={item.item_id} style={styles.itemRow} testID={`item-${item.item_id}`}>
-                  <View style={styles.itemBadge}>
-                    <Text style={styles.itemBadgeText}>{item.item_id}</Text>
-                  </View>
-                  <View style={styles.itemDetails}>
-                    <Text style={styles.itemPath} numberOfLines={1}>
-                      {item.file_path}
-                    </Text>
-                    <Text style={styles.itemMeta}>
-                      {item.platform} • {item.section} • {Math.round(item.file_size_bytes / 1024)} KB
-                    </Text>
-                    <Text style={styles.itemHash} numberOfLines={1}>
-                      SHA-256: {item.sha256}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            )}
-          </ScrollView>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>3. Captured Evidence Register</Text>
+          <Text style={styles.cardBadge}>{capturedItems.length} items verified</Text>
         </View>
 
-        {/* Live Protocol Logs */}
-        <View style={[styles.card, styles.gridCol]}>
-          <Text style={styles.cardHeader}>Worker Protocol Event Log</Text>
-          <ScrollView
-            ref={logsEndRef}
-            style={styles.logScroll}
-            onContentSizeChange={() => logsEndRef.current?.scrollToEnd({ animated: true })}
-          >
-            {logs.length === 0 ? (
-              <Text style={styles.emptyText}>Worker logs will appear here when capture starts.</Text>
-            ) : (
-              logs.map((log) => (
-                <View key={log.id} style={styles.logRow}>
-                  <Text style={styles.logTime}>{log.timestamp}</Text>
-                  <Text
-                    style={[
-                      styles.logType,
-                      log.level === 'warn' && styles.logWarn,
-                      log.level === 'error' && styles.logError,
-                      log.level === 'success' && styles.logSuccess,
-                    ]}
-                  >
-                    [{log.type}]
-                  </Text>
-                  <Text style={styles.logMsg}>{log.message}</Text>
+        {capturedItems.length === 0 ? (
+          <View style={styles.emptyItemsState}>
+            <Text style={styles.emptyItemsText}>
+              No items captured in this session yet. Start the capture session above to stream evidence.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.evidenceTable}>
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>ITEM ID</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>PLATFORM</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1 }]}>SECTION</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 3.6 }]}>SHA-256 HASH</Text>
+            </View>
+
+            {capturedItems.map((item) => (
+              <View key={item.item_id} style={styles.tableRow} testID={`item-${item.item_id}`}>
+                <Text style={[styles.itemCellId, { flex: 1.2 }]}>{item.item_id}</Text>
+                <View style={[styles.platformBadgeWrapper, { flex: 1.2 }]}>
+                  <Text style={styles.platformBadge}>{item.platform.toUpperCase()}</Text>
                 </View>
-              ))
-            )}
-          </ScrollView>
-        </View>
+                <Text style={[styles.itemCellSection, { flex: 1 }]}>{item.section}</Text>
+                <Text style={[styles.itemCellHash, { flex: 3.6 }]}>{item.sha256}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
-    </View>
+
+      {/* Protocol Audit Stream */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>4. Protocol Stream & Audit Log</Text>
+          <Text style={styles.cardBadge}>{logs.length} events</Text>
+        </View>
+
+        <ScrollView style={styles.logContainer} ref={logsEndRef}>
+          {logs.length === 0 ? (
+            <Text style={styles.logEmptyText}>Worker protocol idle. Logs will appear during capture.</Text>
+          ) : (
+            logs.map((log) => (
+              <View key={log.id} style={styles.logLine}>
+                <Text style={styles.logTimestamp}>{log.timestamp}</Text>
+                <Text
+                  style={[
+                    styles.logType,
+                    log.level === 'error'
+                      ? styles.logError
+                      : log.level === 'warn'
+                        ? styles.logWarn
+                        : log.level === 'success'
+                          ? styles.logSuccess
+                          : styles.logInfo,
+                  ]}
+                >
+                  [{log.type}]
+                </Text>
+                <Text style={styles.logMessage}>{log.message}</Text>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </View>
+    </ScrollView>
   );
 };
 
@@ -340,256 +372,339 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 32,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#F8F8F6',
   },
   header: {
-    marginBottom: 20,
+    marginBottom: 28,
+  },
+  breadcrumb: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  breadcrumbItem: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#8C8B88',
+    letterSpacing: 0.6,
+  },
+  breadcrumbDivider: {
+    fontSize: 10,
+    color: '#B0AFA9',
+  },
+  breadcrumbActive: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#34445B',
+    letterSpacing: 0.6,
   },
   title: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#f8fafc',
-    marginBottom: 6,
+    color: '#242522',
+    letterSpacing: -0.3,
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: '#666562',
+    lineHeight: 18,
+  },
+  subtitleBold: {
+    fontWeight: '600',
+    color: '#34445B',
   },
   card: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E6E5E1',
     borderRadius: 8,
     padding: 20,
-    borderWidth: 1,
-    borderColor: '#334155',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   cardHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#cbd5e1',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  platformRow: {
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#242522',
+  },
+  cardBadge: {
+    fontSize: 11,
+    color: '#7A7875',
+    backgroundColor: '#F4F3EF',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  statusLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#34445B',
+  },
+  cardDescription: {
+    fontSize: 12,
+    color: '#666562',
+    marginBottom: 16,
+    lineHeight: 16,
+  },
+  platformsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 18,
   },
-  checkboxContainer: {
+  platformButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  checkboxActive: {
-    borderColor: '#38bdf8',
-    backgroundColor: '#0c2438',
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#64748b',
+    borderColor: '#DCDAD5',
+    backgroundColor: '#FFFFFF',
+    gap: 8,
+  },
+  platformButtonSelected: {
+    borderColor: '#34445B',
+    backgroundColor: '#EFF2F6',
+  },
+  disabledOption: {
+    opacity: 0.6,
+  },
+  checkboxIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: '#B0AFA9',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
-  checkedBox: {
-    backgroundColor: '#38bdf8',
-    borderColor: '#38bdf8',
+  checkboxIndicatorActive: {
+    borderColor: '#34445B',
+    backgroundColor: '#34445B',
   },
-  checkmark: {
-    color: '#0f172a',
+  checkboxCheck: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  platformButtonText: {
     fontSize: 12,
-    fontWeight: '900',
-  },
-  platformLabel: {
-    color: '#94a3b8',
-    fontSize: 13,
     fontWeight: '500',
+    color: '#666562',
   },
-  platformLabelActive: {
-    color: '#f8fafc',
+  platformButtonTextSelected: {
+    color: '#242522',
     fontWeight: '600',
   },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  startButton: {
-    backgroundColor: '#38bdf8',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  startButtonDisabled: {
-    opacity: 0.5,
-  },
-  startButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  caseBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: '#0f172a',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  caseBadgeText: {
-    fontSize: 12,
-    color: '#38bdf8',
-    fontWeight: '500',
-  },
-  alertBox: {
-    backgroundColor: '#78350f',
-    borderColor: '#f59e0b',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 16,
+  progressContainer: {
     marginBottom: 16,
   },
-  alertTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#fef3c7',
-    marginBottom: 4,
-  },
-  alertBody: {
-    fontSize: 13,
-    color: '#fffbeb',
-    marginBottom: 6,
-  },
-  alertFooter: {
-    fontSize: 11,
-    color: '#fde68a',
-    fontStyle: 'italic',
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  progressLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#f8fafc',
-  },
-  statusLabel: {
-    fontSize: 12,
-    color: '#38bdf8',
-  },
-  progressBarTrack: {
-    height: 8,
-    backgroundColor: '#0f172a',
-    borderRadius: 4,
+  progressBarBackground: {
+    height: 6,
+    backgroundColor: '#EBEBE6',
+    borderRadius: 3,
     overflow: 'hidden',
+    marginBottom: 8,
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#38bdf8',
+    backgroundColor: '#34445B',
+    borderRadius: 3,
   },
-  bottomGrid: {
-    flex: 1,
+  progressTextRow: {
     flexDirection: 'row',
-    gap: 16,
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  gridCol: {
-    flex: 1,
-    marginBottom: 0,
-  },
-  itemListScroll: {
-    flex: 1,
-  },
-  emptyText: {
-    color: '#64748b',
-    fontSize: 12,
-    paddingVertical: 12,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  itemBadge: {
-    backgroundColor: '#0369a1',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-  },
-  itemBadgeText: {
-    color: '#f8fafc',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  itemDetails: {
-    flex: 1,
-  },
-  itemPath: {
-    color: '#f8fafc',
+  progressPercentage: {
     fontSize: 11,
-    fontFamily: 'monospace',
+    fontWeight: '600',
+    color: '#34445B',
   },
-  itemMeta: {
-    color: '#94a3b8',
-    fontSize: 10,
-    marginTop: 2,
+  activePlatformLabel: {
+    fontSize: 11,
+    color: '#7A7875',
   },
-  itemHash: {
-    color: '#64748b',
-    fontSize: 9,
-    fontFamily: 'monospace',
-    marginTop: 2,
-  },
-  logScroll: {
-    flex: 1,
-    backgroundColor: '#090d16',
-    borderRadius: 6,
-    padding: 10,
-  },
-  logRow: {
+  controlRow: {
     flexDirection: 'row',
-    gap: 6,
+    justifyContent: 'flex-start',
+  },
+  startCaptureButton: {
+    backgroundColor: '#34445B',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  startCaptureButtonDisabled: {
+    opacity: 0.6,
+  },
+  startCaptureButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  buttonLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  alertBox: {
+    flexDirection: 'row',
+    backgroundColor: '#FAF3E8',
+    borderWidth: 1,
+    borderColor: '#EDE0CA',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 20,
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  alertIconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#8A611E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertIcon: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  alertTextGroup: {
+    flex: 1,
+  },
+  alertTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8A611E',
+    marginBottom: 2,
+  },
+  alertMessage: {
+    fontSize: 12,
+    color: '#63430C',
+    lineHeight: 16,
     marginBottom: 4,
   },
-  logTime: {
+  alertTimeout: {
+    fontSize: 11,
+    color: '#8A611E',
+    fontWeight: '500',
+  },
+  emptyItemsState: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyItemsText: {
+    fontSize: 12,
+    color: '#8C8B88',
+    textAlign: 'center',
+  },
+  evidenceTable: {
+    borderWidth: 1,
+    borderColor: '#E6E5E1',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F8F8F6',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E6E5E1',
+  },
+  tableHeaderCell: {
     fontSize: 10,
-    color: '#64748b',
-    fontFamily: 'monospace',
+    fontWeight: '600',
+    color: '#7A7875',
+    letterSpacing: 0.5,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F4F3EF',
+  },
+  itemCellId: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#34445B',
+  },
+  platformBadgeWrapper: {
+    alignItems: 'flex-start',
+  },
+  platformBadge: {
+    fontSize: 9,
+    fontWeight: '600',
+    backgroundColor: '#EFF2F6',
+    color: '#34445B',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+  },
+  itemCellSection: {
+    fontSize: 11,
+    color: '#666562',
+  },
+  itemCellHash: {
+    fontSize: 10,
+    color: '#7A7875',
+  },
+  logContainer: {
+    height: 140,
+    backgroundColor: '#F8F8F6',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E6E5E1',
+    padding: 10,
+  },
+  logEmptyText: {
+    fontSize: 11,
+    color: '#8C8B88',
+  },
+  logLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  logTimestamp: {
+    fontSize: 10,
+    color: '#8C8B88',
   },
   logType: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#38bdf8',
-    fontFamily: 'monospace',
   },
-  logWarn: {
-    color: '#f59e0b',
-  },
-  logError: {
-    color: '#ef4444',
+  logInfo: {
+    color: '#34445B',
   },
   logSuccess: {
-    color: '#22c55e',
+    color: '#2E6B4E',
   },
-  logMsg: {
+  logWarn: {
+    color: '#8A611E',
+  },
+  logError: {
+    color: '#9E3834',
+  },
+  logMessage: {
+    fontSize: 11,
+    color: '#242522',
     flex: 1,
-    fontSize: 10,
-    color: '#e2e8f0',
-    fontFamily: 'monospace',
   },
 });

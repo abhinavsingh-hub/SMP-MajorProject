@@ -159,14 +159,14 @@ function buildReportCss(watermark?: string): string {
 
   return `
   :root {
-    --primary: #0f172a;
-    --primary-light: #1e293b;
-    --accent: #2563eb;
-    --accent-light: #eff6ff;
-    --border: #e2e8f0;
-    --text: #334155;
-    --text-muted: #64748b;
-    --bg-card: #f8fafc;
+    --primary: #242522;
+    --primary-light: #34445B;
+    --accent: #34445B;
+    --accent-light: #EFF2F6;
+    --border: #E6E5E1;
+    --text: #242522;
+    --text-muted: #666562;
+    --bg-card: #F8F8F6;
   }
 
   * {
@@ -176,11 +176,11 @@ function buildReportCss(watermark?: string): string {
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: var(--text);
-    background: #f1f5f9;
+    background: #F8F8F6;
     line-height: 1.5;
-    padding: 24px;
+    padding: 32px 24px;
     position: relative;
   }
 
@@ -190,7 +190,8 @@ function buildReportCss(watermark?: string): string {
     max-width: 900px;
     margin: 0 auto;
     background: #ffffff;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+    border: 1px solid #E6E5E1;
     border-radius: 8px;
     overflow: hidden;
   }
