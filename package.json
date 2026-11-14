@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "lint": "eslint .",
+    "typecheck": "tsc --project packages/core/tsconfig.json --noEmit && tsc --project apps/desktop/tsconfig.json --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm --workspace=@smp/core test && npm --workspace=@smp/desktop test"

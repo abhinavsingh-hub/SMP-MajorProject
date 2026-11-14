@@ -29,5 +29,21 @@ export default defineConfig([
       ],
     },
   },
+  {
+    files: ['**/*.config.js', '**/metro.config.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+  {
+    files: ['**/apps/mobile/**'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
   prettierConfig,
 ]);
