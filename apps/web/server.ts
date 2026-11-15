@@ -563,10 +563,10 @@ const server = http.createServer(async (req, res) => {
 
 // Seed default case and start listening
 ensureDefaultCaseSeeded().then(() => {
-  server.listen(PORT, '127.0.0.1', () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`=======================================================`);
     console.log(`  SocialParse Live Forensic Server active on:`);
-    console.log(`  http://localhost:${PORT}`);
+    console.log(`  http://0.0.0.0:${PORT}`);
     console.log(`  Cases Directory: ${CASES_ROOT}`);
     console.log(`=======================================================`);
   });
