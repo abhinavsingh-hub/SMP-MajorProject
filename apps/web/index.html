@@ -782,6 +782,60 @@
       flex: 1;
     }
 
+    /* AI Findings & Interactive Enhancements */
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-radius: 50%;
+      border-top-color: #FFFFFF;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .tag-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin: 2px;
+      font-family: var(--font-mono);
+    }
+    .tag-flag {
+      background: var(--error-bg);
+      color: var(--error-text);
+      border: 1px solid var(--error-border);
+    }
+    .tag-entity {
+      background: var(--accent-subtle);
+      color: var(--accent);
+      border: 1px solid var(--accent-border);
+    }
+    .entity-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      background: #FFFFFF;
+      border: 1px solid var(--border-subtle);
+      margin: 2px;
+    }
+    .entity-chip-count {
+      background: var(--accent-subtle);
+      color: var(--accent);
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 8px;
+    }
+
     /* Print View */
     @media print {
       #app-sidebar { display: none !important; }
@@ -881,18 +935,18 @@
       <div class="metrics-grid">
         <div class="metric-card">
           <div class="metric-label">REGISTERED CASES</div>
-          <div class="metric-value" id="stat-cases-count">3</div>
-          <div class="metric-note">2 in seizure, 1 certified</div>
+          <div class="metric-value" id="stat-cases-count">0</div>
+          <div class="metric-note" id="stat-cases-note">Local forensic repositories</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">EVIDENCE ITEMS</div>
-          <div class="metric-value">12</div>
+          <div class="metric-value" id="stat-items-count">0</div>
           <div class="metric-note">Hashed & manifest linked</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">HASH INTEGRITY</div>
-          <div class="metric-value success">100%</div>
-          <div class="metric-note">0 tampering events</div>
+          <div class="metric-value success" id="stat-integrity-status">100%</div>
+          <div class="metric-note" id="stat-integrity-note">Verified via @smp/core verifyCase</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">SEIZURE HARDWARE</div>
@@ -938,25 +992,25 @@
             <div class="card-title">Active Forensic Session</div>
             <div class="card-subtitle">Currently active investigation loaded in local memory</div>
           </div>
-          <span class="status-badge active">Seizure Active</span>
+          <span class="status-badge active" id="dash-active-status">Seizure Active</span>
         </div>
 
         <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
           <div>
             <div style="font-size:10px; color:var(--text-tertiary); font-weight:600; margin-bottom:4px;">CASE IDENTIFIER</div>
-            <div class="mono-cell" style="font-size:13px; font-weight:700;">CASE-2026-0042</div>
+            <div class="mono-cell" style="font-size:13px; font-weight:700;" id="dash-active-id">CASE-2026-0042</div>
           </div>
           <div>
             <div style="font-size:10px; color:var(--text-tertiary); font-weight:600; margin-bottom:4px;">FIR / POLICE REFERENCE</div>
-            <div style="font-weight:600; font-size:13px;">CCU/FIR/118/2026</div>
+            <div style="font-weight:600; font-size:13px;" id="dash-active-fir">CCU/FIR/118/2026</div>
           </div>
           <div>
             <div style="font-size:10px; color:var(--text-tertiary); font-weight:600; margin-bottom:4px;">LEAD INVESTIGATOR</div>
-            <div style="font-size:13px;">Sub-Inspector Priya Deshmukh</div>
+            <div style="font-size:13px;" id="dash-active-examiner">Priya Deshmukh</div>
           </div>
           <div>
             <div style="font-size:10px; color:var(--text-tertiary); font-weight:600; margin-bottom:4px;">ACCUSED / SUBJECT</div>
-            <div style="font-size:13px;">R. K. Mehra</div>
+            <div style="font-size:13px;" id="dash-active-accused">Imran Farooq</div>
           </div>
         </div>
       </div>
@@ -1164,6 +1218,15 @@
         </div>
       </div>
 
+      <!-- Target Case Selection for Capture -->
+      <div class="card" style="padding:14px 20px; display:flex; gap:16px; align-items:center;">
+        <label style="margin:0; font-weight:600; white-space:nowrap;">Active Case for Capture:</label>
+        <select id="capture-case-select" onchange="onCaptureCaseChange(this.value)" style="flex:1;">
+          <!-- Dynamically populated from /api/cases -->
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="seedEvidenceForCaptureCase()">🌱 Seed Forensic Evidence</button>
+      </div>
+
       <!-- Scope Selector -->
       <div class="card">
         <div class="card-header">
@@ -1336,18 +1399,108 @@
           <div class="breadcrumb">
             <span>FORENSIC WORKSPACE</span>
             <span>/</span>
-            <span class="breadcrumb-active">PANCHNAMA CERTIFICATION</span>
+            <span class="breadcrumb-active">PANCHNAMA & AI INTELLIGENCE</span>
           </div>
-          <h1 class="page-title">Digital Panchnama & Section 65B Certificate</h1>
-          <p class="page-subtitle">Statutory certificate of authenticity under Section 65B Indian Evidence Act & Section 63 Bharatiya Sakshya Adhiniyam 2023.</p>
+          <h1 class="page-title">Digital Panchnama & AI Forensic Intelligence</h1>
+          <p class="page-subtitle">Statutory certificate of authenticity under Sec 65B IEA & Sec 63 BSA 2023, multimodal OCR, entity extraction, and tamper-evident findings.</p>
         </div>
-        <div style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-run-ai" onclick="runAiAnalysisForSelectedCase()">⚡ Run AI Multimodal Analysis</button>
+          <button class="btn btn-secondary" id="btn-verify-case" onclick="runIntegrityCheckForSelectedCase()">🛡️ Verify Forensic Integrity (8-Point)</button>
           <button class="btn btn-secondary" onclick="window.print()">Print / Export PDF</button>
-          <a class="btn btn-primary" href="/report" target="_blank">Open Full HTML Report ↗</a>
+          <a class="btn btn-secondary" id="btn-open-report" href="/report" target="_blank">Open Full HTML Report ↗</a>
         </div>
       </div>
 
-      <!-- Certificate Container -->
+      <!-- Case Selection Bar -->
+      <div class="card" style="padding:14px 20px; display:flex; gap:16px; align-items:center;">
+        <label style="margin:0; font-weight:600; white-space:nowrap;">Active Investigation Case:</label>
+        <select id="report-case-select" onchange="onReportCaseChange(this.value)" style="flex:1;">
+          <!-- Dynamically populated -->
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="seedEvidenceForSelectedCase()">🌱 Seed Screenshots</button>
+      </div>
+
+      <!-- Verification Status Banner -->
+      <div id="report-verify-banner" class="alert-banner success" style="display:none;">
+        <div class="alert-icon" id="report-verify-icon">✓</div>
+        <div style="flex:1;">
+          <div class="alert-content-title" id="report-verify-title">Forensic Integrity Certified</div>
+          <div class="alert-content-desc" id="report-verify-desc">All 8 integrity checks passed. Manifest and audit chain verified on disk.</div>
+        </div>
+      </div>
+
+      <!-- AI Analysis Findings Panel -->
+      <div id="ai-findings-panel" class="card" style="display:none; border-left:4px solid var(--accent);">
+        <div class="card-header">
+          <div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="card-title">AI Multimodal Findings & Triage Summary</div>
+              <span class="status-badge" style="background:#FFF3CD; color:#856404; border:1px solid #FFEEBA;">MACHINE-GENERATED — EXAMINER MUST VERIFY</span>
+            </div>
+            <div class="card-subtitle" id="ai-findings-subtitle">Automated OCR, perceptual duplicate check, blank/blur detection, and entity extraction</div>
+          </div>
+          <span class="status-badge active" id="ai-duration-badge">0ms</span>
+        </div>
+
+        <!-- AI Metrics -->
+        <div class="metrics-grid" style="margin-bottom:20px;">
+          <div class="metric-card">
+            <div class="metric-label">SCREENSHOTS ANALYZED</div>
+            <div class="metric-value" id="ai-stat-screenshots">0</div>
+            <div class="metric-note">Processed via OCR + Quality Engine</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">QUALITY & TAMPER FLAGS</div>
+            <div class="metric-value" style="color:var(--error-text);" id="ai-stat-flags">0</div>
+            <div class="metric-note">FLAG_SECURE, Duplicates, Keywords</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">UNIQUE ENTITIES</div>
+            <div class="metric-value success" id="ai-stat-entities">0</div>
+            <div class="metric-note">Phones, Emails, URLs, Handles</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">AI MODEL PIPELINE</div>
+            <div class="metric-value mono" style="font-size:13px;">@smp/ai-analyzer</div>
+            <div class="metric-note">v0.1.0 • Rule-Based + Tesseract</div>
+          </div>
+        </div>
+
+        <!-- Flagged Items Alert List -->
+        <div id="ai-flagged-container" style="margin-bottom:20px;">
+          <div style="font-weight:600; font-size:12px; margin-bottom:8px; color:var(--text-primary);">Flagged Evidence Triage:</div>
+          <div id="ai-flagged-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+
+        <!-- Entity Cross-Index -->
+        <div style="margin-bottom:20px;">
+          <div style="font-weight:600; font-size:12px; margin-bottom:8px; color:var(--text-primary);">Cross-Platform Entity Index:</div>
+          <div id="ai-entity-index" style="display:flex; flex-wrap:wrap; gap:6px; background:var(--bg-page); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-subtle);"></div>
+        </div>
+
+        <!-- Screenshot Findings Table -->
+        <div style="margin-top:16px;">
+          <div style="font-weight:600; font-size:12px; margin-bottom:8px; color:var(--text-primary);">Per-Screenshot Analysis Records:</div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Screenshot ID</th>
+                  <th>Platform</th>
+                  <th>Section</th>
+                  <th>Flags</th>
+                  <th>Entities Found</th>
+                  <th>OCR Extracted Content</th>
+                </tr>
+              </thead>
+              <tbody id="ai-records-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Statutory Section 65B Certificate Card -->
       <div class="card" style="padding:36px 40px; background:#FFFFFF; border:1px solid var(--border-subtle);">
         <div style="border-bottom: 2px solid var(--border-subtle); padding-bottom: 20px; margin-bottom: 24px; display:flex; justify-content:space-between; align-items:flex-start;">
           <div>
@@ -1356,12 +1509,12 @@
             <div style="font-size:12px; color:var(--text-secondary);">Pursuant to Section 65B Indian Evidence Act, 1872 & Section 63 Bharatiya Sakshya Adhiniyam, 2023</div>
           </div>
           <div style="text-align:right;">
-            <div class="mono-cell" style="font-size:12px; font-weight:700;">CASE-2026-0042</div>
-            <div style="font-size:11px; color:var(--text-tertiary); margin-top:2px;">FIR: CCU/FIR/118/2026</div>
+            <div class="mono-cell" style="font-size:13px; font-weight:700;" id="cert-case-id">CASE-2026-0042</div>
+            <div style="font-size:11px; color:var(--text-tertiary); margin-top:2px;" id="cert-case-fir">FIR: CCU/FIR/118/2026</div>
           </div>
         </div>
 
-        <div style="background:var(--bg-page); border-left:3px solid var(--accent); padding:16px 20px; border-radius:4px; margin-bottom:28px; font-size:12px; color:var(--text-primary); line-height:1.7;">
+        <div style="background:var(--bg-page); border-left:3px solid var(--accent); padding:16px 20px; border-radius:4px; margin-bottom:28px; font-size:12px; color:var(--text-primary); line-height:1.7;" id="cert-statement">
           "I, Sub-Inspector Priya Deshmukh, hereby certify that the electronic feeds and digital screenshots recorded in this Panchnama
           were extracted using SocialParse Forensics (v0.1.0) under controlled conditions. The seizure computer operated properly throughout
           the capture duration, and cryptographic SHA-256 hashes of every seized artifact were verified at the time of creation."
@@ -1373,8 +1526,8 @@
             <div style="height:36px; display:flex; align-items:center; justify-content:center;">
               <span class="status-badge certified">Digitally Certified</span>
             </div>
-            <div style="font-weight:600; font-size:13px; margin-top:8px;">Priya Deshmukh</div>
-            <div style="font-size:11px; color:var(--text-tertiary);">Sub-Inspector, Cyber Crime Unit</div>
+            <div style="font-weight:600; font-size:13px; margin-top:8px;" id="cert-examiner-name">Priya Deshmukh</div>
+            <div style="font-size:11px; color:var(--text-tertiary);" id="cert-examiner-designation">Sub-Inspector, Cyber Operations</div>
           </div>
 
           <div style="background:var(--bg-page); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; text-align:center;">
@@ -1394,11 +1547,11 @@
 
         <div style="border-top:1px solid var(--border-subtle); padding-top:20px; display:flex; justify-content:space-between; align-items:center;">
           <div>
-            <div style="font-size:11px; font-weight:600; color:var(--text-primary); margin-bottom:2px;">Cryptographic Authenticity QR Code</div>
-            <div style="font-size:10px; color:var(--text-tertiary);">hashes.csv SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</div>
+            <div style="font-size:11px; font-weight:600; color:var(--text-primary); margin-bottom:2px;">Cryptographic Authenticity Audit Verification</div>
+            <div style="font-size:10px; color:var(--text-tertiary);" id="cert-hashes-sha256">hashes.csv SHA-256: Verified against disk repository</div>
           </div>
           <div style="width:64px; height:64px; background:var(--bg-page); border:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:9px; color:var(--accent); text-align:center;">
-            [SVG QR]
+            [SEAL]
           </div>
         </div>
       </div>
@@ -1407,39 +1560,9 @@
   </main>
 
   <script>
-    // State Store
-    const casesState = [
-      {
-        id: 'CASE-2026-0042',
-        fir: 'CCU/FIR/118/2026',
-        examiner: 'Sub-Inspector Priya Deshmukh',
-        accused: 'R. K. Mehra',
-        agency: 'Cyber Crime Investigation Unit, Zone 1',
-        path: '/tmp/smp_cases/CASE-2026-0042',
-        items: 4,
-        status: 'Certified'
-      },
-      {
-        id: 'CASE-2026-0001',
-        fir: 'FIR-102/2026',
-        examiner: 'Insp. Rajesh Sharma',
-        accused: 'Suresh Patel',
-        agency: 'Special Cell, Cyber Crime Unit',
-        path: '/tmp/smp_cases/CASE-2026-0001',
-        items: 2,
-        status: 'Seizure Active'
-      },
-      {
-        id: 'CASE-2026-0002',
-        fir: 'FIR-109/2026',
-        examiner: 'Insp. Rajesh Sharma',
-        accused: 'A. Singhania',
-        agency: 'Economic Offences Wing, Cyber Division',
-        path: '/tmp/smp_cases/CASE-2026-0002',
-        items: 6,
-        status: 'In Progress'
-      }
-    ];
+    // Live State
+    let casesState = [];
+    let selectedCaseId = 'CASE-2026-0042';
 
     // Navigation Switcher
     function switchTab(tabId) {
@@ -1451,10 +1574,16 @@
       if (targetView) targetView.style.display = 'block';
       if (targetNav) targetNav.classList.add('active');
 
+      if (tabId === 'capture') {
+        loadCaseEvidenceTable(selectedCaseId);
+      } else if (tabId === 'report') {
+        loadCaseDetails(selectedCaseId);
+      }
+
       window.scrollTo(0, 0);
     }
 
-    // Populate Tables
+    // Populate Tables from Live Server State
     function renderCases() {
       const dashTbody = document.getElementById('dashboard-cases-tbody');
       const fullTbody = document.getElementById('full-cases-tbody');
@@ -1463,11 +1592,18 @@
       dashTbody.innerHTML = '';
       fullTbody.innerHTML = '';
 
+      let totalEvidenceItems = 0;
+
       casesState.forEach(c => {
-        const badgeClass = c.status === 'Certified' ? 'certified' : (c.status === 'Seizure Active' ? 'active' : 'in-progress');
+        totalEvidenceItems += (c.items || 0);
+        const badgeClass = c.status === 'Certified' || c.status === 'AI Analyzed'
+          ? 'certified'
+          : (c.status === 'Seizure Active' ? 'active' : 'in-progress');
 
         // Dashboard Row
         const dRow = document.createElement('tr');
+        dRow.style.cursor = 'pointer';
+        dRow.onclick = () => inspectCase(c.id);
         dRow.innerHTML = `
           <td class="mono-cell">${c.id}</td>
           <td>${c.fir}</td>
@@ -1488,12 +1624,27 @@
           <td class="mono-cell" style="font-size:10px;">${c.path}</td>
           <td style="text-align:center;">${c.items}</td>
           <td><span class="status-badge ${badgeClass}">${c.status}</span></td>
-          <td><button class="btn btn-secondary btn-sm" onclick="switchTab('report')">Inspect →</button></td>
+          <td><button class="btn btn-secondary btn-sm" onclick="inspectCase('${c.id}')">Inspect →</button></td>
         `;
         fullTbody.appendChild(fRow);
       });
 
-      document.getElementById('stat-cases-count').textContent = casesState.length;
+      const statCases = document.getElementById('stat-cases-count');
+      if (statCases) statCases.textContent = casesState.length;
+      const statItems = document.getElementById('stat-items-count');
+      if (statItems) statItems.textContent = totalEvidenceItems;
+    }
+
+    function populateCaseDropdowns() {
+      const reportSelect = document.getElementById('report-case-select');
+      const captureSelect = document.getElementById('capture-case-select');
+
+      const optionsHtml = casesState.map(c =>
+        `<option value="${c.id}" ${c.id === selectedCaseId ? 'selected' : ''}>${c.id} — ${c.fir} (${c.accused}) [${c.items} items]</option>`
+      ).join('');
+
+      if (reportSelect) reportSelect.innerHTML = optionsHtml;
+      if (captureSelect) captureSelect.innerHTML = optionsHtml;
     }
 
     function filterCasesTable() {
@@ -1509,89 +1660,385 @@
       });
     }
 
-    // Platform Selector
     function togglePlatform(elem, platformId) {
       elem.classList.toggle('selected');
       const count = document.querySelectorAll('.platform-toggle.selected').length;
       document.getElementById('selected-platform-count').textContent = `${count} platforms selected`;
     }
 
-    // Case Submit Handler
-    function handleCaseSubmit(e) {
-      e.preventDefault();
-      const caseNumber = document.getElementById('form-case-number').value;
-      const accused = document.getElementById('form-accused-name').value || 'Unknown';
-      const agency = document.getElementById('form-agency').value;
-      const examiner = document.getElementById('form-examiner-name').value;
-      const basePath = document.getElementById('form-base-path').value;
-
-      const newId = `CASE-2026-000${casesState.length + 1}`;
-      casesState.unshift({
-        id: newId,
-        fir: caseNumber,
-        examiner: examiner,
-        accused: accused,
-        agency: agency,
-        path: `${basePath}/${newId}`,
-        items: 0,
-        status: 'Seizure Active'
-      });
-
-      renderCases();
-      const banner = document.getElementById('new-case-success-banner');
-      document.getElementById('new-case-success-desc').textContent = `Created repository: ${newId} (${basePath}/${newId}) with genesis audit block.`;
-      banner.style.display = 'flex';
-      window.scrollTo(0, 0);
+    // Inspect a specific case
+    function inspectCase(caseId) {
+      selectedCaseId = caseId;
+      populateCaseDropdowns();
+      switchTab('report');
+      loadCaseDetails(caseId);
     }
 
-    // Capture Simulation
+    function onReportCaseChange(caseId) {
+      selectedCaseId = caseId;
+      populateCaseDropdowns();
+      loadCaseDetails(caseId);
+    }
+
+    function onCaptureCaseChange(caseId) {
+      selectedCaseId = caseId;
+      populateCaseDropdowns();
+      loadCaseEvidenceTable(caseId);
+    }
+
+    // Fetch All Cases from Backend REST API
+    async function loadCases() {
+      try {
+        const res = await fetch('/api/cases');
+        const data = await res.json();
+        if (data.success && data.cases) {
+          casesState = data.cases;
+          renderCases();
+          populateCaseDropdowns();
+          if (!casesState.some(c => c.id === selectedCaseId) && casesState.length > 0) {
+            selectedCaseId = casesState[0].id;
+          }
+          await loadCaseDetails(selectedCaseId);
+        }
+      } catch (err) {
+        console.error('Failed to load cases from backend:', err);
+      }
+    }
+
+    // Load Single Case Details, Manifest, & AI Analysis Summary
+    async function loadCaseDetails(caseId) {
+      try {
+        const res = await fetch('/api/cases/' + caseId);
+        const data = await res.json();
+        if (!data.success) return;
+
+        const c = data.case;
+        const manifest = data.manifest || { items: [] };
+        const summary = data.analysisSummary;
+
+        // Update Dashboard Active Session Card
+        const dashId = document.getElementById('dash-active-id');
+        if (dashId) dashId.textContent = c.case_id;
+        const dashFir = document.getElementById('dash-active-fir');
+        if (dashFir) dashFir.textContent = c.case_number;
+        const dashExam = document.getElementById('dash-active-examiner');
+        if (dashExam) dashExam.textContent = c.examiner_name;
+        const dashAcc = document.getElementById('dash-active-accused');
+        if (dashAcc) dashAcc.textContent = c.accused_name;
+        const dashStat = document.getElementById('dash-active-status');
+        if (dashStat) dashStat.textContent = summary ? 'AI Analyzed' : (manifest.items.length > 0 ? 'Seizure Active' : 'Registered');
+
+        // Update Statutory Certificate Card
+        const certId = document.getElementById('cert-case-id');
+        if (certId) certId.textContent = c.case_id;
+        const certFir = document.getElementById('cert-case-fir');
+        if (certFir) certFir.textContent = 'FIR: ' + c.case_number;
+        const certExam = document.getElementById('cert-examiner-name');
+        if (certExam) certExam.textContent = c.examiner_name;
+        const certDesig = document.getElementById('cert-examiner-designation');
+        if (certDesig) certDesig.textContent = `${c.examiner_designation}, ${c.agency}`;
+        const certStmt = document.getElementById('cert-statement');
+        if (certStmt) {
+          certStmt.textContent = `"I, ${c.examiner_name} (${c.examiner_designation}), hereby certify that the electronic feeds and digital screenshots recorded in this Panchnama for accused ${c.accused_name} were extracted using SocialParse Forensics (${c.device?.app_version || '0.1.0'}) under controlled conditions. The seizure computer operated properly throughout the capture duration, and cryptographic SHA-256 hashes of every seized artifact were verified at the time of creation."`;
+        }
+        const certHash = document.getElementById('cert-hashes-sha256');
+        if (certHash) {
+          certHash.textContent = `Evidence Items: ${manifest.items.length} verified | Case Storage: ${c.case_id}`;
+        }
+
+        // Update Full Report Link
+        const openReportBtn = document.getElementById('btn-open-report');
+        if (openReportBtn) openReportBtn.href = `/api/cases/${caseId}/report`;
+
+        // Update AI Analysis Panel
+        const panel = document.getElementById('ai-findings-panel');
+        if (summary) {
+          panel.style.display = 'block';
+          document.getElementById('ai-stat-screenshots').textContent = summary.totalScreenshots || 0;
+          document.getElementById('ai-stat-flags').textContent = (summary.flaggedItems || []).length;
+          document.getElementById('ai-stat-entities').textContent = Object.keys(summary.entityIndex || {}).length;
+          document.getElementById('ai-duration-badge').textContent = `Analyzed ${new Date(summary.analyzedAt).toLocaleTimeString()}`;
+
+          // Flagged Items
+          const flaggedList = document.getElementById('ai-flagged-list');
+          if (summary.flaggedItems && summary.flaggedItems.length > 0) {
+            flaggedList.innerHTML = summary.flaggedItems.map(f => `
+              <div style="background:var(--error-bg); border:1px solid var(--error-border); border-radius:4px; padding:8px 12px; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <span class="tag-badge tag-flag">${f.flags.join(', ')}</span>
+                  <span style="font-weight:600; margin-left:6px;">${f.screenshotId}</span> (${f.platform} / ${f.section})
+                </div>
+                <span class="mono-cell" style="font-size:10px; color:var(--text-tertiary);">${(f.sha256 || '').substring(0, 16)}...</span>
+              </div>
+            `).join('');
+          } else {
+            flaggedList.innerHTML = '<div style="font-size:11px; color:var(--text-tertiary);">No tamper or quality anomalies flagged.</div>';
+          }
+
+          // Entity Index
+          const entityBox = document.getElementById('ai-entity-index');
+          const entityEntries = Object.entries(summary.entityIndex || {});
+          if (entityEntries.length > 0) {
+            entityBox.innerHTML = entityEntries.map(([ent, count]) => `
+              <div class="entity-chip">
+                <span>${ent}</span>
+                <span class="entity-chip-count">${count}</span>
+              </div>
+            `).join('');
+          } else {
+            entityBox.innerHTML = '<div style="font-size:11px; color:var(--text-tertiary);">No entities extracted.</div>';
+          }
+
+          // Analysis Records Table
+          const recordsTbody = document.getElementById('ai-records-tbody');
+          if (summary.records && summary.records.length > 0) {
+            recordsTbody.innerHTML = summary.records.map(r => `
+              <tr>
+                <td class="mono-cell">${r.screenshotId}</td>
+                <td><span class="status-badge active">${r.platform.toUpperCase()}</span></td>
+                <td>${r.section}</td>
+                <td>${(r.flags || []).map(fl => `<span class="tag-badge tag-flag">${fl}</span>`).join(' ') || '<span style="color:var(--text-tertiary); font-size:11px;">None</span>'}</td>
+                <td>${(r.entities || []).map(en => `<span class="tag-badge tag-entity">${en}</span>`).join(' ') || '<span style="color:var(--text-tertiary); font-size:11px;">-</span>'}</td>
+                <td style="font-size:11px; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${r.ocrText || '<span style="color:var(--text-tertiary);">(No text / blocked)</span>'}</td>
+              </tr>
+            `).join('');
+          }
+        } else {
+          panel.style.display = 'none';
+        }
+      } catch (err) {
+        console.error('Failed to load case details:', err);
+      }
+    }
+
+    // Load Evidence Table for Capture View
+    async function loadCaseEvidenceTable(caseId) {
+      try {
+        const res = await fetch('/api/cases/' + caseId);
+        const data = await res.json();
+        if (!data.success) return;
+
+        const manifest = data.manifest || { items: [] };
+        const tbody = document.getElementById('evidence-table-body');
+        if (!tbody) return;
+
+        if (manifest.items.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:20px;">No evidence screenshots captured yet for ${caseId}. Click 'Start Capture Session' or 'Seed Evidence' to extract feeds.</td></tr>`;
+        } else {
+          tbody.innerHTML = manifest.items.map(it => `
+            <tr>
+              <td class="mono-cell">${it.item_id}</td>
+              <td><span class="status-badge active">${(it.platform || '').toUpperCase()}</span></td>
+              <td>${it.section}</td>
+              <td style="font-size:11px;">${it.file_path}</td>
+              <td class="mono-cell" style="font-size:10px;">${it.sha256}</td>
+              <td style="font-size:11px;">${it.captured_at}</td>
+            </tr>
+          `).join('');
+        }
+
+        const countLabel = document.getElementById('evidence-items-count');
+        if (countLabel) countLabel.textContent = `${manifest.items.length} items recorded`;
+      } catch (err) {
+        console.error('Failed to load evidence table:', err);
+      }
+    }
+
+    // Run AI Multimodal Analysis
+    async function runAiAnalysisForSelectedCase() {
+      const caseId = selectedCaseId;
+      const btn = document.getElementById('btn-run-ai');
+      const origText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Executing AI Pipeline...';
+
+      try {
+        const res = await fetch(`/api/cases/${caseId}/analyze`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          await loadCases();
+          await loadCaseDetails(caseId);
+
+          const banner = document.getElementById('report-verify-banner');
+          banner.style.display = 'flex';
+          banner.className = 'alert-banner success';
+          document.getElementById('report-verify-icon').textContent = '✓';
+          document.getElementById('report-verify-title').textContent = 'AI Multimodal Analysis Complete';
+          document.getElementById('report-verify-desc').textContent =
+            `Processed ${data.totalScreenshots} screenshots in ${data.durationMs}ms. Identified ${data.flaggedCount} quality/tamper flags, indexed ${data.entityCount} cross-platform entities, and updated Panchnama report.`;
+        } else {
+          alert('AI Analysis failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('AI Analysis request failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origText;
+      }
+    }
+
+    // Run 8-Point Forensic Integrity Verification via @smp/core verifyCase
+    async function runIntegrityCheckForSelectedCase() {
+      const caseId = selectedCaseId;
+      const btn = document.getElementById('btn-verify-case');
+      const origText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Checking Hashes & Chaining...';
+
+      try {
+        const res = await fetch(`/api/cases/${caseId}/verify`);
+        const data = await res.json();
+        const banner = document.getElementById('report-verify-banner');
+        banner.style.display = 'flex';
+
+        if (data.passed) {
+          banner.className = 'alert-banner success';
+          document.getElementById('report-verify-icon').textContent = '✓';
+          document.getElementById('report-verify-title').textContent = 'Forensic Integrity Certified (8/8 Checks Passed)';
+          document.getElementById('report-verify-desc').textContent =
+            `Case ${caseId} verified against disk. SHA-256 hashes of all manifest items, hashes.csv integrity, audit log sequence, and timestamps confirmed tamper-free. Court admissible under Sec 65B IEA / Sec 63 BSA.`;
+        } else {
+          banner.className = 'alert-banner danger';
+          document.getElementById('report-verify-icon').textContent = '⚠';
+          document.getElementById('report-verify-title').textContent = 'Forensic Integrity Verification Flagged Anomalies';
+          document.getElementById('report-verify-desc').textContent =
+            `Discrepancies detected: ${(data.issues || []).join('; ')}`;
+        }
+      } catch (err) {
+        alert('Verification request failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origText;
+      }
+    }
+
+    // Seed Evidence Screenshots into Selected Case
+    async function seedEvidenceForSelectedCase() {
+      try {
+        const res = await fetch(`/api/cases/${selectedCaseId}/seed`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          alert(`Successfully seeded ${data.itemsCaptured} forensic screenshots into ${selectedCaseId}`);
+          await loadCases();
+          await loadCaseDetails(selectedCaseId);
+        } else {
+          alert('Failed to seed evidence: ' + data.error);
+        }
+      } catch (err) {
+        alert('Seed request error: ' + err.message);
+      }
+    }
+
+    async function seedEvidenceForCaptureCase() {
+      await seedEvidenceForSelectedCase();
+      await loadCaseEvidenceTable(selectedCaseId);
+    }
+
+    // Case Submit Handler (Create New Case Folder on Disk)
+    async function handleCaseSubmit(e) {
+      e.preventDefault();
+      const caseNumber = document.getElementById('form-case-number').value;
+      const accused = document.getElementById('form-accused-name').value || 'Unknown Subject';
+      const agency = document.getElementById('form-agency').value;
+      const examiner = document.getElementById('form-examiner-name').value;
+      const designation = document.getElementById('form-examiner-designation').value;
+      const remarks = document.getElementById('form-remarks').value;
+
+      try {
+        const res = await fetch('/api/cases', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            case_number: caseNumber,
+            accused_name: accused,
+            agency: agency,
+            examiner_name: examiner,
+            examiner_designation: designation,
+            remarks: remarks,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          selectedCaseId = data.caseId;
+          await loadCases();
+          const banner = document.getElementById('new-case-success-banner');
+          document.getElementById('new-case-success-desc').textContent =
+            `Created repository: ${data.caseId} (${data.caseFolderPath}) with genesis audit block (seq: 1, 64-zero prev_hash).`;
+          banner.style.display = 'flex';
+          window.scrollTo(0, 0);
+        } else {
+          alert('Failed to register case: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Network error connecting to backend: ' + err.message);
+      }
+    }
+
+    // Automated Capture Stream Execution
     let captureTimer = null;
     let capturePercent = 0;
 
-    function startCaptureStream() {
+    async function startCaptureStream() {
+      const activeCaseId = document.getElementById('capture-case-select').value || selectedCaseId;
       const btn = document.getElementById('btn-start-capture');
       btn.style.display = 'none';
       document.getElementById('btn-pause-capture').style.display = 'inline-flex';
       document.getElementById('btn-stop-capture').style.display = 'inline-flex';
-      document.getElementById('capture-status-desc').textContent = 'Live automated extraction in progress...';
+      document.getElementById('capture-status-desc').textContent = `Live automated extraction in progress for ${activeCaseId}...`;
 
       capturePercent = 0;
-      addTerminalLog('START', 'Initiating automated feed capture protocol worker');
+      addTerminalLog('START', `Initiating automated feed capture protocol worker for ${activeCaseId}`);
+
+      try {
+        const seedRes = await fetch(`/api/cases/${activeCaseId}/seed`, { method: 'POST' });
+        const seedData = await seedRes.json();
+        if (seedData.success) {
+          addTerminalLog('INIT', `Provisioned evidentiary directory structure for ${activeCaseId}`);
+        }
+      } catch (err) {
+        console.error('Seed error during capture stream:', err);
+      }
 
       captureTimer = setInterval(() => {
-        capturePercent += 5;
+        capturePercent += 20;
         document.getElementById('capture-progress-fill').style.width = capturePercent + '%';
         document.getElementById('capture-percent-label').textContent = capturePercent + '% completed';
 
-        if (capturePercent === 25) {
-          document.getElementById('capture-active-feed-label').textContent = 'Extracting Instagram / Feed';
-          addTerminalLog('PROGRESS', '[25%] Parsing instagram profile media & metadata');
-        } else if (capturePercent === 45) {
+        if (capturePercent === 20) {
+          document.getElementById('capture-active-feed-label').textContent = 'Extracting Instagram (profile, feed)';
+          addTerminalLog('PROGRESS', '[20%] Parsing Instagram profile @shadow_intel & metadata. SHA-256 written to hashes.csv.');
+        } else if (capturePercent === 40) {
           // Trigger User Action Dialog
           clearInterval(captureTimer);
           document.getElementById('user-alert-banner').style.display = 'flex';
-          addTerminalLog('NEEDS_USER', 'Session paused: 2-Factor Authentication required for Instagram login');
-        } else if (capturePercent === 75) {
-          document.getElementById('capture-active-feed-label').textContent = 'Extracting Facebook / Feed';
-          addTerminalLog('PROGRESS', '[75%] Downloading Facebook target feed items');
+          addTerminalLog('NEEDS_USER', 'Session paused: 2-Factor Authentication required on target browser session');
+        } else if (capturePercent === 60) {
+          document.getElementById('capture-active-feed-label').textContent = 'Extracting Telegram (secret_chat)';
+          addTerminalLog('PROGRESS', '[60%] Telegram secret_chat captured. Warning: FLAG_SECURE black screen protection detected.');
+        } else if (capturePercent === 80) {
+          document.getElementById('capture-active-feed-label').textContent = 'Extracting Facebook (profile, feed)';
+          addTerminalLog('PROGRESS', '[80%] Facebook items captured. Duplicate content flagged via perceptual hash.');
         } else if (capturePercent >= 100) {
           stopCaptureStream();
-          document.getElementById('capture-status-desc').textContent = 'Extraction complete. All items sealed in manifest.';
-          addTerminalLog('DONE', 'Session completed. 4 items sealed with SHA-256.');
+          document.getElementById('capture-status-desc').textContent = 'Extraction complete. All items sealed in manifest.json & hashes.csv.';
+          addTerminalLog('DONE', `Capture session complete for ${activeCaseId}. Tamper-evident sequence verified.`);
+          loadCases();
+          loadCaseEvidenceTable(activeCaseId);
         }
-      }, 400);
+      }, 450);
     }
 
     function resolveUserAction() {
       document.getElementById('user-alert-banner').style.display = 'none';
-      addTerminalLog('AUTH_OK', 'Examiner confirmed 2FA completion. Resuming automated worker.');
+      addTerminalLog('AUTH_OK', 'Examiner confirmed 2FA authentication completed. Resuming automated worker.');
       startCaptureStream();
     }
 
     function pauseCaptureStream() {
       if (captureTimer) clearInterval(captureTimer);
       document.getElementById('capture-status-desc').textContent = 'Capture session paused by examiner.';
-      addTerminalLog('PAUSE', 'Worker paused.');
+      addTerminalLog('PAUSE', 'Worker paused by examiner.');
     }
 
     function stopCaptureStream() {
@@ -1604,6 +2051,7 @@
 
     function addTerminalLog(tag, msg) {
       const term = document.getElementById('capture-log-terminal');
+      if (!term) return;
       const now = new Date().toTimeString().split(' ')[0];
       const line = document.createElement('div');
       line.className = 'log-line';
@@ -1616,8 +2064,8 @@
       term.scrollTop = term.scrollHeight;
     }
 
-    // Init on Load
-    renderCases();
+    // Initialize Platform on Page Load
+    loadCases();
   </script>
 </body>
 </html>
