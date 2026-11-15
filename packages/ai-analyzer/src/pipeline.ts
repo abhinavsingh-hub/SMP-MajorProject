@@ -87,7 +87,7 @@ export class AnalysisPipeline {
       if (this.appendAuditEvents) {
         await appendAuditEvent(caseFolder, {
           actor: 'desktop_app',
-          event_type: 'item_captured', // record analysis step
+          event_type: 'integrity_check', // record AI forensic analysis step
           details: {
             action: 'ai_item_analyzed',
             item_id: item.itemId,

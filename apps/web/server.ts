@@ -136,10 +136,24 @@ async function seedEvidenceScreenshots(caseDir: string, caseId: string): Promise
     },
   ];
 
-  const manifestItems = [];
-  const csvRows = ['item_id,platform,section,file_path,sha256,captured_at'];
+  // Check existing items in manifest to prevent duplicate seeding
+  const manifestPath = path.join(caseDir, 'manifest.json');
+  const manifestRaw = await fsp.readFile(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestRaw);
+  const existingItems = manifest.items || [];
+  const existingIds = new Set(existingItems.map((it: { item_id: string }) => it.item_id));
 
-  for (const it of items) {
+  const itemsToSeed = items.filter((it) => !existingIds.has(it.item_id));
+  if (itemsToSeed.length === 0) {
+    return existingItems.length;
+  }
+
+  const manifestItems = [...existingItems];
+  const hashesPath = path.join(caseDir, 'hashes.csv');
+  const existingCsv = fs.existsSync(hashesPath) ? await fsp.readFile(hashesPath, 'utf8') : 'item_id,platform,section,file_path,sha256,captured_at\n';
+  const csvRows = [existingCsv.trim()];
+
+  for (const it of itemsToSeed) {
     const relPath = `${it.platform}/screenshots/${it.file_name}`;
     const absPath = path.join(caseDir, relPath);
 
@@ -167,19 +181,15 @@ async function seedEvidenceScreenshots(caseDir: string, caseId: string): Promise
   }
 
   // Update manifest.json
-  const manifestPath = path.join(caseDir, 'manifest.json');
-  const manifestRaw = await fsp.readFile(manifestPath, 'utf8');
-  const manifest = JSON.parse(manifestRaw);
   manifest.items = manifestItems;
   manifest.updated_at = new Date().toISOString();
   await fsp.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 
   // Update hashes.csv
-  const hashesPath = path.join(caseDir, 'hashes.csv');
-  await fsp.writeFile(hashesPath, `${csvRows.join('\n')}\n`, 'utf8');
+  await fsp.writeFile(hashesPath, `${csvRows.filter(Boolean).join('\n')}\n`, 'utf8');
 
   // Append matching item_captured events to audit_log.jsonl
-  for (const item of manifestItems) {
+  for (const item of manifestItems.filter((m) => !existingIds.has(m.item_id))) {
     await appendAuditEvent(caseDir, {
       actor: 'capture_worker',
       event_type: 'item_captured',
@@ -194,7 +204,7 @@ async function seedEvidenceScreenshots(caseDir: string, caseId: string): Promise
     });
   }
 
-  return items.length;
+  return manifestItems.length;
 }
 
 /**
@@ -279,6 +289,56 @@ const server = http.createServer(async (req, res) => {
       }
 
       sendJson(res, 200, { success: true, cases: casesList });
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // API: Get Single Case Details (case.json, manifest.json, analysis_summary.json)
+    // -------------------------------------------------------------------------
+    const singleCaseMatch = urlPath.match(/^\/api\/cases\/([A-Za-z0-9_-]+)$/);
+    if (singleCaseMatch && method === 'GET') {
+      const caseId = singleCaseMatch[1];
+      const caseDir = path.join(CASES_ROOT, caseId);
+      if (!fs.existsSync(caseDir)) {
+        sendJson(res, 404, { success: false, error: `Case not found: ${caseId}` });
+        return;
+      }
+
+      const caseJsonRaw = await fsp.readFile(path.join(caseDir, 'case.json'), 'utf8');
+      const caseJson = JSON.parse(caseJsonRaw);
+      const manifestRaw = await fsp.readFile(path.join(caseDir, 'manifest.json'), 'utf8');
+      const manifest = JSON.parse(manifestRaw);
+
+      let analysisSummary = null;
+      const summaryPath = path.join(caseDir, 'analysis_summary.json');
+      if (fs.existsSync(summaryPath)) {
+        analysisSummary = JSON.parse(await fsp.readFile(summaryPath, 'utf8'));
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        case: caseJson,
+        manifest,
+        analysisSummary,
+      });
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // API: Serve Evidence Screenshot Image
+    // -------------------------------------------------------------------------
+    const imageMatch = urlPath.match(/^\/api\/cases\/([A-Za-z0-9_-]+)\/evidence\/([a-z0-9_]+)\/(.+\.png)$/);
+    if (imageMatch && method === 'GET') {
+      const [, caseId, platform, filename] = imageMatch;
+      const filePath = path.join(CASES_ROOT, caseId, platform, 'screenshots', filename);
+      if (fs.existsSync(filePath)) {
+        const img = await fsp.readFile(filePath);
+        res.writeHead(200, { 'Content-Type': 'image/png' });
+        res.end(img);
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Evidence screenshot not found');
       return;
     }
 
