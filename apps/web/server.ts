@@ -417,9 +417,9 @@ const server = http.createServer(async (req, res) => {
         await seedEvidenceScreenshots(caseDir, caseId);
       }
 
-      // Prepare OCR service with mock fallback for instant zero‑latency processing
+      // Duplicate OCR and summary provider block removed – using the later consolidated block.
+// Prepare mock OCR engine with seeded results
       const mockOcr = new MockOcrEngine();
-      // (mock results unchanged)
       mockOcr.setMockResult(
         path.join(caseDir, 'instagram/screenshots/instagram_profile_0001_20261112T093158Z.png'),
         'Profile @shadow_intel Bio: Encrypted comms only. WhatsApp/Call: +91-98765-43210 Link: https://t.me/shadow_channel Followed by 15.2k accounts',
@@ -437,40 +437,9 @@ const server = http.createServer(async (req, res) => {
         'Recent Post 2h ago: Operational update #CyberCampaign #Mission2026 meeting location finalized at safehouse.',
       );
 
-      // Choose summary provider based on env flag (default: rule‑based)
-      let summaryProvider = undefined; // let pipeline use default rule‑based
-      if (process.env.AI_SUMMARY_PROVIDER === 'qwen') {
-        // Import lazily to avoid circular load issues
-        const { QwenSummaryProvider } = await import('../../packages/ai-analyzer/src/qwen-summary-provider.js');
-        summaryProvider = new QwenSummaryProvider({
-          allowExternalApi: true,
-          // token taken from HF_TOKEN env automatically
-        });
-      }
-
+      // Build services & pipeline (summaryProvider may be undefined → rule‑based fallback)
       const ocrService = new OcrService({ engine: mockOcr });
       const pipeline = new AnalysisPipeline({ ocrService, summaryProvider });
-
-      const mockOcr = new MockOcrEngine();
-      mockOcr.setMockResult(
-        path.join(caseDir, 'instagram/screenshots/instagram_profile_0001_20261112T093158Z.png'),
-        'Profile @shadow_intel Bio: Encrypted comms only. WhatsApp/Call: +91-98765-43210 Link: https://t.me/shadow_channel Followed by 15.2k accounts',
-      );
-      mockOcr.setMockResult(
-        path.join(caseDir, 'instagram/screenshots/instagram_feed_0002_20261112T093221Z.png'),
-        'Recent Post 2h ago: Operational update #CyberCampaign #Mission2026 meeting location finalized at safehouse.',
-      );
-      mockOcr.setMockResult(
-        path.join(caseDir, 'facebook/screenshots/facebook_profile_0004_20261112T093403Z.png'),
-        'Facebook Account Info: Imran Farooq Contact Email: target_intel@proton.me Phone: +919876543210 #Investigation',
-      );
-      mockOcr.setMockResult(
-        path.join(caseDir, 'facebook/screenshots/facebook_feed_0005_20261112T093427Z.png'),
-        'Recent Post 2h ago: Operational update #CyberCampaign #Mission2026 meeting location finalized at safehouse.',
-      );
-
-      const ocrService = new OcrService({ engine: mockOcr });
-      const pipeline = new AnalysisPipeline({ ocrService });
 
       const startTime = Date.now();
       const pipelineResult = await pipeline.analyzeCase(caseDir);
