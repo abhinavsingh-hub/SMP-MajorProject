@@ -58,3 +58,7 @@ gradle.properties
 
 # Demo output
 .demo-output/
+
+# Cases directory
+cases/
+
