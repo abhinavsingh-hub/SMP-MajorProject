@@ -93,6 +93,8 @@ export class AnalysisPipeline {
             item_id: item.itemId,
             platform: item.platform,
             section: item.section,
+            file_path: item.filePath,
+            sha256: item.sha256,
             flags: record.flags,
             entities_count: record.entities.length,
             category: record.category,
